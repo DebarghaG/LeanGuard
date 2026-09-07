@@ -5,6 +5,7 @@ import pytest
 pytest.importorskip("tau2")
 
 from leanguard.benchmark import (
+    RecordingEnvironment,
     SimulatedConfirmation,
     aggregate,
     executed_trajectory,
@@ -104,6 +105,19 @@ def test_failed_episodes_stay_in_denominator():
     assert report["episodes"] == 2
     assert report["scored"] == 1
     assert report["deterministic_success_rate_all_attempted"] == 0.5
+
+
+def test_halted_batch_cannot_dispatch_a_tool(tmp_path):
+    from leanguard.batch import ExperimentHalted
+
+    def dispatch(message):
+        pytest.fail("a halted batch must not dispatch")
+
+    environment = RecordingEnvironment(
+        SimpleNamespace(get_response=dispatch), tmp_path, stop_check=lambda: True
+    )
+    with pytest.raises(ExperimentHalted, match="before tool dispatch"):
+        environment.get_response(ToolCall(id="x", name="read", arguments={}))
 
 
 def test_customer_confirmation_requires_boolean(monkeypatch):

@@ -10,6 +10,8 @@ from tau2.agent.llm_agent import LLMAgent
 from tau2.data_model.message import AssistantMessage, MultiToolMessage, SystemMessage, UserMessage
 from tau2.user.user_simulator import UserSimulator
 
+from .batch import ExperimentHalted
+
 FEEDBACK = {
     "identity": (
         "prerequisite",
@@ -148,10 +150,11 @@ def protocol_problem(message):
 class ReliableAgent(LLMAgent):
     """Retry invalid protocol messages before any of their tools are dispatched."""
 
-    def __init__(self, *args, protocol_retries=1, **kwargs):
+    def __init__(self, *args, protocol_retries=1, stop_check=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.protocol_retries = protocol_retries
         self.generation_records = []
+        self.stop_check = stop_check or (lambda: False)
 
     @property
     def system_prompt(self):
@@ -165,14 +168,19 @@ class ReliableAgent(LLMAgent):
         original_args = deepcopy(self.llm_args)
         try:
             for attempt in range(self.protocol_retries + 1):
+                if self.stop_check():
+                    raise ExperimentHalted("batch halted after repeated integration errors")
                 candidate_state = state.model_copy(deep=True)
                 if attempt:
-                    candidate_state.system_messages.append(
+                    instruction = "The previous generation was not a usable protocol message and did not execute. Return either one structured tool call OR a plain-text answer, never both. Do not repeat an already completed action."
+                    candidate_state.system_messages = [
                         SystemMessage(
                             role="system",
-                            content="The previous generation was not a usable protocol message and did not execute. Return either one structured tool call OR a plain-text answer, never both. Do not repeat an already completed action.",
+                            content="\n\n".join(
+                                [m.content for m in candidate_state.system_messages] + [instruction]
+                            ),
                         )
-                    )
+                    ]
                     self.llm_args = deepcopy(original_args)
                     self.llm_args["extra_body"]["chat_template_kwargs"]["enable_thinking"] = False
                 reply, candidate_state = super().generate_next_message(message, candidate_state)
@@ -193,14 +201,21 @@ class ReliableAgent(LLMAgent):
 
 
 def customer_reason(content, previous=""):
-    """Conservative literal reason recognition; incidental 'cancel' does not overwrite evidence."""
-    lower = content.lower()
-    choices = [r for r in ("health", "weather", "change of plan") if r in lower]
+    """Literal, clause-scoped evidence, not a general language-understanding guarantee."""
+    lower = content.lower().replace("’", "'")
+    choices = [
+        r for r in ("health", "weather", "change of plan") if re.search(r"\b" + r + r"\b", lower)
+    ]
     if not choices:
         return previous
-    if len(choices) != 1 or re.search(r"\b(no|not|never|without)\b", lower):
+    if len(choices) != 1:
         return ""
-    return choices[0]
+    reason = choices[0]
+    clauses = re.split(r"[.!?;\n]+|\b(?:but|however)\b", lower)
+    relevant = [c for c in clauses if re.search(r"\b" + reason + r"\b", c)]
+    if any(re.search(r"\b(no|not|never|without|neither|nor|cannot|\w+n't)\b", c) for c in relevant):
+        return ""
+    return reason
 
 
 def observe_simulator_travel(host):
@@ -228,13 +243,16 @@ def observe_simulator_travel(host):
 class BoundedUser(UserSimulator):
     """Same customer controls in every arm; never consult scoring assertions to stop."""
 
-    def __init__(self, *args, observer=None, handoff=None, max_tool_burst=4, **kwargs):
+    def __init__(
+        self, *args, observer=None, handoff=None, max_tool_burst=4, stop_check=None, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.observer = observer
         self.handoff = handoff or (lambda: False)
         self.max_tool_burst = max_tool_burst
         self.controls = []
         self.generation_records = []
+        self.stop_check = stop_check or (lambda: False)
 
     @property
     def system_prompt(self):
@@ -247,6 +265,8 @@ class BoundedUser(UserSimulator):
         )
 
     def generate_next_message(self, message, state):
+        if self.stop_check():
+            raise ExperimentHalted("batch halted after repeated integration errors")
         if isinstance(message, AssistantMessage) and not message.is_tool_call() and self.handoff():
             new_state = state.model_copy(deep=True)
             new_state.messages.append(message)

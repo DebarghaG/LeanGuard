@@ -157,6 +157,54 @@ def test_airline_valid_cancellation(tmp_path):
         assert reservation.status == "cancelled"
 
 
+@pytest.mark.parametrize(
+    "reason,allowed",
+    [
+        ("I have a health problem. I want Economy, not Basic Economy.", True),
+        ("I understand not changing the destination. Please cancel due to health reasons.", True),
+        ("It is not a health reason.", False),
+        ("I want to cancel due to a change of plan.", False),
+    ],
+)
+def test_customer_reason_reaches_native_cancellation_rule(tmp_path, reason, allowed):
+    from types import SimpleNamespace
+
+    from leanguard.benchmark import observe_customer
+    from tau2.data_model.message import UserMessage
+
+    adapter = TauAdapter("airline")
+    reservation = adapter.environment.tools.db.reservations["VA5SGQ"]
+    assert reservation.insurance == "yes"
+    with GuardHost(
+        "airline",
+        tmp_path / "journal.sqlite",
+        adapter,
+        principal="actor",
+        session="conversation",
+        clock=lambda: adapter.clock,
+    ) as host:
+        customer_ui = SimpleNamespace(user_messages=[])
+        observe_customer(
+            host,
+            customer_ui,
+            UserMessage(role="user", content=f"My ID is {reservation.user_id}. {reason}"),
+        )
+        args = {"reservation_id": reservation.reservation_id}
+        assert host.execute("get_reservation_details", args)["allow"]
+        observe_customer(host, customer_ui, UserMessage(role="user", content="Yes, please cancel."))
+        proposal = host.prepare("cancel_reservation", args)
+        host.confirm(proposal.id, True)
+        before = adapter.environment.get_db_hash()
+        result = host.execute("cancel_reservation", args, proposal_id=proposal.id)
+        assert result["allow"] is allowed, result
+        if allowed:
+            assert result["outcome"] == "success"
+            assert reservation.status == "cancelled"
+        else:
+            assert "airline.cancel" in result["reasons"]
+            assert adapter.environment.get_db_hash() == before
+
+
 def test_telecom_overdue_status_and_actual_payment_request(tmp_path):
     from tau2.domains.telecom.data_model import BillStatus
 

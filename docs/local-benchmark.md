@@ -55,7 +55,7 @@ The runner checks that checkout's revision; benchmark data is not committed here
   --name leanguard-qwen35-4b-parallel --max-num-seqs 16 --prefix-caching --print-command
 .venv/bin/python -m leanguard.benchmark \
   --tasks-per-domain 10 --concurrency 12 \
-  --output runs/qwen35-4b-v2-90-20260907
+  --output runs/qwen35-4b-parallel-20260907
 ```
 
 The endpoint can be supplied with `--endpoint`; non-local endpoints are rejected.
@@ -84,6 +84,30 @@ four consecutive tool calls and terminates a completed human-tool handoff. These
 deterministic simulator interventions are logged; they do not consult scoring
 assertions. This changes the experimental protocol, so comparisons with the older
 pilot are descriptive, not an isolated estimate of feedback's effect.
+
+Retry instructions are merged into the one leading system message required
+by Qwen's template. An earlier batch was stopped after this boundary failed;
+its logs remain an integration diagnostic, not part of the corrected experiment.
+The opt-in live regression injects three invalid response shapes after both user
+and tool messages and sends the retry through the real local server, including its
+chat-template validation, without dispatching tools. These are preflight tests,
+not model-quality samples:
+
+```sh
+LEANGUARD_LIVE_TESTS=1 .venv/bin/pytest -q tests/test_rollout.py -k live_qwen_retry
+```
+
+`batch.py` owns bounded scheduling and cooperative stopping; `rollout.py` owns
+interaction controls; `benchmark.py` wires these into tasks, scoring, and artifacts.
+Only as many jobs as there are workers are submitted at once. The runner halts
+after three classified provider/harness errors by default
+(`--max-integration-errors`). Pending episodes are cancelled and active workers
+stop at their next generation or tool-dispatch boundary; an in-flight inference
+may still run until its request timeout. Model protocol exhaustion and native
+policy denials are not circuit-breaker failures. Halted runs report unstarted
+episodes separately rather than presenting them as evaluated episodes. New run
+directories use descriptive experiment names and dates; source fingerprints and
+the manifest describe the implementation and settings.
 
 The manifest records task IDs, seeds, task-content digest, server version and
 model path, package versions, GPU/driver, compiled-policy fingerprint, and runner
@@ -120,6 +144,11 @@ the benchmark supplies trusted evidence from the live simulator's `is_abroad`
 sensor, restricted to the authenticated customer's line matching the device phone
 number. It does not read hidden task assertions or accept agent-authored claims.
 Travel-state changes require a fresh session; this is not a production sensor adapter.
+
+Cancellation negation is scoped to the clause mentioning the reason. For example,
+an unrelated "not Basic Economy" sentence must not erase an explicit health
+statement. Negated reasons and multiple reason categories still fail closed. This
+literal recognizer is not a general solution to paraphrases, hypotheticals, or intent.
 
 An unresolved read-only identity lookup is allowed to return an ordinary tool error;
 it neither authenticates the customer nor permits a switch to another resolved

@@ -12,7 +12,6 @@ import subprocess
 import time
 import traceback
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,6 +19,7 @@ from urllib.parse import urlparse
 import httpx
 from loguru import logger
 
+from .batch import ExperimentHalted, run_batch
 from .engine import default_binary, digest
 from .host import GuardHost
 from .rollout import (
@@ -360,17 +360,20 @@ def score_run(run, task, environment, blocked_ids, options):
 class RecordingEnvironment:
     """Common observation layer; baseline tools remain unguarded."""
 
-    def __init__(self, environment, directory):
+    def __init__(self, environment, directory, stop_check=None):
         self.environment, self.directory = environment, directory
         self.calls = []
         self.handoff = False
         self.orchestrator = None
         self.checkpoints = set()
+        self.stop_check = stop_check or (lambda: False)
 
     def __getattr__(self, name):
         return getattr(self.environment, name)
 
     def get_response(self, message):
+        if self.stop_check():
+            raise ExperimentHalted("batch halted before tool dispatch")
         start = time.monotonic()
         reply = self.environment.get_response(message)
         self.calls.append(
@@ -409,7 +412,7 @@ class RecordingEnvironment:
         return reply
 
 
-def run_episode(task, options, directory):
+def run_episode(task, options, directory, stop_event=None):
     from tau2.orchestrator.orchestrator import Orchestrator
     from tau2.runner.build import build_environment, build_user
     from tau2.utils.llm_utils import set_llm_log_dir, set_llm_log_mode
@@ -420,7 +423,10 @@ def run_episode(task, options, directory):
     set_llm_log_mode("all")
     result = {"task_id": task.id, **options}
     host, guarded, orchestrator, agent, user, environment, recording = (None,) * 7
+    stop_check = stop_event.is_set if stop_event is not None else lambda: False
     try:
+        if stop_check():
+            raise ExperimentHalted("batch halted before episode initialization")
         environment = build_environment(options["domain"])
         model = "openai/" + options["model"]
         agent = ReliableAgent(
@@ -434,6 +440,7 @@ def run_episode(task, options, directory):
                 timeout=options.get("request_timeout", 600),
             ),
             protocol_retries=options.get("protocol_retries", 1),
+            stop_check=stop_check,
         )
         user = build_user(
             "user_simulator",
@@ -465,7 +472,7 @@ def run_episode(task, options, directory):
             guarded = RecordingGuard(host, confirmation, detailed=options["mode"] == "guarded")
             active_environment = guarded
             observer = lambda reply: observe_customer(host, confirmation, reply)
-        recording = RecordingEnvironment(active_environment, directory)
+        recording = RecordingEnvironment(active_environment, directory, stop_check=stop_check)
         user = BoundedUser(
             llm=user.llm,
             llm_args=user.llm_args,
@@ -473,6 +480,7 @@ def run_episode(task, options, directory):
             tools=user.tools,
             observer=observer,
             handoff=lambda: recording.handoff,
+            stop_check=stop_check,
         )
         orchestrator = Orchestrator(
             options["domain"],
@@ -652,6 +660,7 @@ def main():
     parser.add_argument("--generation-tokens", type=int, default=8192)
     parser.add_argument("--request-timeout", type=int, default=600)
     parser.add_argument("--protocol-retries", type=int, default=1)
+    parser.add_argument("--max-integration-errors", type=int, default=3)
     parser.add_argument("--thinking", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -664,6 +673,7 @@ def main():
             args.timeout,
             args.generation_tokens,
             args.request_timeout,
+            args.max_integration_errors,
         )
         < 1
         or args.protocol_retries < 0
@@ -685,7 +695,7 @@ def main():
         **vars(args),
         "tau_revision": revision,
         "selection": "seeded random sample of base split",
-        "protocol_version": 2,
+        "protocol": "bounded-retry-single-system-message",
         "agent_sampling": llm_args(
             args.endpoint,
             thinking=args.thinking,
@@ -719,6 +729,9 @@ def main():
     metadata["runner_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     metadata["rollout_sha256"] = hashlib.sha256(
         Path(__file__).with_name("rollout.py").read_bytes()
+    ).hexdigest()
+    metadata["batch_sha256"] = hashlib.sha256(
+        Path(__file__).with_name("batch.py").read_bytes()
     ).hexdigest()
     metadata["adapter_sha256"] = hashlib.sha256(
         Path(__file__).with_name("tau.py").read_bytes()
@@ -762,38 +775,50 @@ def main():
         ),
         flush=True,
     )
-    results = []
+
+    def record_result(result, results):
+        write_json(
+            args.output / "progress" / f"{len(results):03d}.json",
+            {"finished": len(results), "total": len(jobs), "summary": aggregate(results)},
+        )
+        print(
+            json.dumps(
+                {
+                    "finished": len(results),
+                    "total": len(jobs),
+                    "domain": result["domain"],
+                    "mode": result["mode"],
+                    "task": result["task_id"],
+                    "score": result.get("score", {}).get("deterministic", {}).get("reward"),
+                    "guard": result.get("guard"),
+                    "seconds": round(result["elapsed_seconds"], 1),
+                    "error": result.get("error"),
+                }
+            ),
+            flush=True,
+        )
+
+    def record_halt(reason):
+        write_json(args.output / "halted.json", reason)
+        print(json.dumps({"batch_halted": reason}), flush=True)
+
     batch_start = time.monotonic()
-    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        futures = [pool.submit(run_episode, *job) for job in jobs]
-        for future in as_completed(futures):
-            result = future.result()
-            results.append(result)
-            write_json(
-                args.output / "progress" / f"{len(results):03d}.json",
-                {"finished": len(results), "total": len(jobs), "summary": aggregate(results)},
-            )
-            print(
-                json.dumps(
-                    {
-                        "finished": len(results),
-                        "total": len(jobs),
-                        "domain": result["domain"],
-                        "mode": result["mode"],
-                        "task": result["task_id"],
-                        "score": result.get("score", {}).get("deterministic", {}).get("reward"),
-                        "guard": result.get("guard"),
-                        "seconds": round(result["elapsed_seconds"], 1),
-                        "error": result.get("error"),
-                    }
-                ),
-                flush=True,
-            )
+    batch = run_batch(
+        jobs,
+        run_episode,
+        concurrency=args.concurrency,
+        max_errors=args.max_integration_errors,
+        on_result=record_result,
+        on_halt=record_halt,
+    )
+    results = batch.results
     elapsed = time.monotonic() - batch_start
     report = {
         "metadata": metadata,
         "summary": aggregate(results),
         "results": results,
+        "halted": batch.halted,
+        "unstarted_episodes": batch.unstarted,
         "timing": {
             "wall_seconds": elapsed,
             "episode_seconds_sum": sum(r["elapsed_seconds"] for r in results),
