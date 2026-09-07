@@ -1,0 +1,170 @@
+# Local Qwen3.5-4B evaluation
+
+This experiment uses real retail, airline, and telecom tasks from the pinned
+`base` splits of `sierra-research/tau2-bench` at
+`672227c6b6676edc20d57ea53b7000262aae77b9`. That revision includes newer task fixes;
+it is not an untouched historical τ² leaderboard release.
+
+The agent receives the normal domain policy and tools. The simulated customer
+receives its normal scenario and, in telecom, its independent user tools.
+Neither the agent nor the guardrail adapter receives expected actions, scoring
+assertions, or a gold database. Those are used only after execution for scoring.
+
+## Serving
+
+The base [Qwen/Qwen3.5-4B checkpoint](https://huggingface.co/Qwen/Qwen3.5-4B)
+is served locally with vLLM in BF16, without LoRA, SFT, DPO, or quantization.
+The cached snapshot is `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`.
+The launcher pins the official vLLM 0.22.0 ARM64 image by digest
+`sha256:6fca82f415f2a3270aec7d70b84e0d1b5b0d0e6260c7fd15eb4478d48db06485`.
+The launcher is `scripts/serve_qwen35.py`; it mounts the cache read-only, uses
+GPU 0, and publishes only a loopback port. It never stops existing services.
+
+The server uses a 32,768-token context, at most 16 active sequences, and a
+20% GPU-memory budget. These are bounded local operating settings, not the
+model's advertised maximum context. Eager execution avoids a long graph-build
+step on this GB10 machine. The model card specifies the `qwen3` reasoning parser
+and `qwen3_coder` tool parser.
+
+The initially installed vLLM 0.19.0 was smoke-tested and exposed a known Qwen3.5
+reasoning/tool-boundary issue: some complete tool calls were left in the reasoning
+field, yielding an empty assistant message. This is distinct from a task failure.
+The [newer upstream parser](https://docs.vllm.ai/en/v0.22.0/api/vllm/reasoning/qwen3_reasoning_parser/)
+explicitly handles that boundary. Initial smoke artifacts are retained separately.
+The initial `leanguard-qwen35-4b` container is stopped; the upgraded container is
+named `leanguard-qwen35-4b-v022`. The parallel experiment uses
+`leanguard-qwen35-4b-parallel` at `http://127.0.0.1:18000/v1`; both older
+containers are retained, stopped. The new server enables prefix caching, which
+vLLM labels experimental for this hybrid model. Its short repeated-prefix probe
+is not representative of every long tool conversation.
+
+The first upgraded-server batch also exposed a local adapter issue: date-valued
+telecom results were not JSON serializable, and re-serializing already-converted
+model results changed numeric wire types. That batch was stopped and preserved
+as an integration diagnostic. The adapter now uses the benchmark's own wire
+representation once. Regression tests compare guarded versus direct outputs and
+verify that date-valued results durably complete their native reservations.
+
+## Experiment
+
+First follow the README's pinned `.tau2` checkout and editable-install instructions.
+The runner checks that checkout's revision; benchmark data is not committed here.
+
+```sh
+.venv/bin/python scripts/serve_qwen35.py \
+  --name leanguard-qwen35-4b-parallel --max-num-seqs 16 --prefix-caching --print-command
+.venv/bin/python -m leanguard.benchmark \
+  --tasks-per-domain 10 --concurrency 12 \
+  --output runs/qwen35-4b-v2-90-20260907
+```
+
+The endpoint can be supplied with `--endpoint`; non-local endpoints are rejected.
+The default is one trial on a fixed, seeded random sample of ten tasks per domain,
+in three modes: baseline, generic denial, and actionable denial feedback (named
+`guarded`). This gives 90 episodes total. Both guarded modes use identical native
+policies and confirmation machinery; only the denial text differs. The runner refuses to
+overwrite an existing experiment directory. `--no-thinking` provides a separate
+non-thinking experiment rather than silently changing the model configuration.
+
+The agent uses thinking mode, temperature 1.0, top-p 0.95, top-k 20, presence penalty
+1.5, and an 8,192-token output cap. The customer uses non-thinking mode, temperature
+0.7, top-p 0.8, top-k 20, presence penalty 1.5, and a 2,048-token cap. These follow
+the model card's general sampling profiles. Both use the same local model.
+Tasks are capped at 240 orchestration steps, ten tool errors, and 1,800 seconds
+per episode. A pending inference request is additionally bounded by its own
+600-second timeout, so wall time can exceed the episode cap before control returns.
+Long conversations remain bounded by the server context; history is not silently
+truncated. The previous 30-episode pilot and its smaller limits are preserved.
+
+All three arms apply the same protocol controls. An empty, mixed text/tool, or
+multi-tool assistant generation is rejected before dispatch and retried once in
+non-thinking mode. Exhaustion remains a failed episode. Reasoning text is never
+converted into tool calls. The customer yields actual device observations after
+four consecutive tool calls and terminates a completed human-tool handoff. These
+deterministic simulator interventions are logged; they do not consult scoring
+assertions. This changes the experimental protocol, so comparisons with the older
+pilot are descriptive, not an isolated estimate of feedback's effect.
+
+The manifest records task IDs, seeds, task-content digest, server version and
+model path, package versions, GPU/driver, compiled-policy fingerprint, and runner
+fingerprint. Conversations, LLM request logs, per-episode results, and a summary
+are retained. Guarded runs additionally retain SQLite journals, native decisions,
+events, simulated confirmations, and checkpoints at each distinct denied
+action/argument pair. Returned-generation usage includes rejected attempts and
+retries, including on failed episodes. Confirmation and judge usage are recorded
+separately. Transport or response-parsing failures may have consumed tokens without
+returning usable accounting. Seeds do not guarantee bitwise identical
+generation under different GPU batching schedules.
+
+## Guarded-mode interpretation
+
+The native Lean packs are fixed, not generated or amended by the tested model.
+All assistant tool calls pass through the existing durable `GuardHost`.
+User tools retain their distinct role and synchronize through the existing adapter.
+
+A separate customer-model call simulates the trusted confirmation UI for proposed
+mutations. It sees the actual canonical proposal and its own scenario, and must
+return a Boolean approval. Malformed/unavailable approval denies. This is **an
+instrumented experiment**, not the stock conversational confirmation mechanism;
+the customer simulator is an unverified stand-in for a real human/UI authority.
+The service agent cannot directly manufacture these approval events.
+
+Airline identity is observed only when the simulated customer's actual message
+literally contains an unambiguous database user ID. It is not taken from hidden
+task metadata or inferred from an agent's tool arguments. Cancellation reasons
+use narrow, documented matching of customer-originated messages. More complex
+language-to-evidence interpretation is not established by this runner. Missing
+compensation evidence can therefore block an otherwise feasible task; such adapter
+limitations must not be attributed solely to the tested model. For telecom roaming,
+the benchmark supplies trusted evidence from the live simulator's `is_abroad`
+sensor, restricted to the authenticated customer's line matching the device phone
+number. It does not read hidden task assertions or accept agent-authored claims.
+Travel-state changes require a fresh session; this is not a production sensor adapter.
+
+An unresolved read-only identity lookup is allowed to return an ordinary tool error;
+it neither authenticates the customer nor permits a switch to another resolved
+account. The adapter records a terminal failure only when a tool marked read-only
+raises without changing either simulator database. Uncertain mutation outcomes
+still fail closed. This relies on the simulator's read-only metadata and state hashes,
+not a proof about arbitrary external side effects.
+
+## Scoring and limits
+
+- Deterministic scores use the upstream database, environment-assertion, action,
+  and communication evaluators, gated by the task's original reward basis.
+  Retail's natural-language assertions are excluded from this **partial** score.
+- Retail assertions are separately judged by the local Qwen model. A combined
+  local score includes those judgments, but is subject to self-judge bias and
+  is not an independent measure of policy compliance. Missing or malformed judge
+  output is recorded as an unavailable combined score, not a pass.
+- The upstream evaluator replays mutating calls. For guarded trajectories, the
+  scoring copy omits only calls that the guard host did not dispatch and their
+  paired responses. The complete original trajectory and denials are retained.
+  A strict replay must reproduce both the live agent and user database hashes
+  before a score is accepted. Dispatched calls that failed are not silently removed.
+- Endpoint failures, malformed model responses, and other episode exceptions stay
+  in the attempted-task denominator. Native denials and adapter errors are reported
+  separately. A denial count alone does not establish that every denial was correct.
+- Recovery metrics group repeated identical blocked calls and measure subsequent
+  admission of that same call, including assistant-turn recovery at 1, 3, and 5 turns.
+  Changed-argument repairs are not automatically recognized. These are observational
+  indicators, not verified semantic repair rates. Independent review must label
+  genuine violations, false interventions, benign errors, and correct alternative
+  actions. Checkpoints preserve evidence for that review; counterfactual branching
+  is not implemented by merely saving them.
+- Final-state environment assertions are retained even after premature termination,
+  explicitly as diagnostics. They do not replace the original reward. Known task-data
+  conflicts are flagged in the manifest; no tasks or reference answers are rewritten.
+- This small, single-trial, local self-play sample is not an official leaderboard
+  score or a statistically conclusive causal comparison. No external model API or
+  paid judge is used. The GPU is shared with pre-existing services, so timings are
+  not controlled, exclusive-hardware performance measurements.
+
+## Autoformalization
+
+Autoformalization is not implemented by this benchmark runner. The experiment uses
+the already-written Lean policies. A future offline pipeline would preserve source
+passages, generate typed native Lean candidates, compile/prove/test them, report
+ambiguous or omitted requirements, and require source-to-policy review before
+promotion. Lean checks the formal statements, not the fidelity of an LLM's English
+translation. The tested agent must not generate or relax its own enforcement pack.

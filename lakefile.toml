@@ -1,0 +1,22 @@
+name = "LeanGuard"
+version = "0.1.0"
+defaultTargets = ["LeanGuard", "LeanGuardProofs", "leanguard", "leanguard-conformance"]
+
+[[require]]
+name = "LeanLTL"
+git = "https://github.com/DebarghaG/LeanLTL.git"
+rev = "7514f6f035e4b8944299f02ac80ba7145a2a1f29"
+
+[[lean_lib]]
+name = "LeanGuard"
+
+[[lean_lib]]
+name = "LeanGuardProofs"
+
+[[lean_exe]]
+name = "leanguard"
+root = "Main"
+
+[[lean_exe]]
+name = "leanguard-conformance"
+root = "ConformanceMain"

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leanguard"
+version = "0.1.0"
+description = "Native Lean temporal policies with a durable Python enforcement host"
+requires-python = ">=3.12"
+dependencies = ["jsonschema>=4.20"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.12"]
+mcp = ["mcp==2.2.0"]
+tau = ["tau2 @ git+https://github.com/sierra-research/tau2-bench.git@672227c6b6676edc20d57ea53b7000262aae77b9"]
+
+[project.scripts]
+leanguard = "leanguard.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
