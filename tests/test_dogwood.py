@@ -1,9 +1,10 @@
 import pytest
 from leanguard import Engine, EngineError, GuardHost
-from leanguard.conformance import CASES, approval, event, replay, run_case, sale, transfer
 from leanguard.demo import MemoryTools
 from leanguard.engine import digest
 from leanguard.host import Snapshot
+
+from scripts.conformance import CASES, approval, event, replay, run_case, sale, transfer
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case.name)

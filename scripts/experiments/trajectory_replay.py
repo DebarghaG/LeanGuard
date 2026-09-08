@@ -20,9 +20,9 @@ from copy import deepcopy
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+from leanguard.engine import Engine, canonical, digest
+from leanguard.tau import TauAdapter, epoch, normalize
 
-from .engine import Engine, canonical, digest
-from .tau import TauAdapter, epoch, normalize
 from .trajectory_data import download_datasets, normalize_datasets
 
 CONFIRMATION = {"retail.confirmation", "airline.confirmation", "telecom.refuel_confirm"}

@@ -17,7 +17,7 @@ is served locally with vLLM in BF16, without LoRA, SFT, DPO, or quantization.
 The cached snapshot is `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`.
 The launcher pins the official vLLM 0.22.0 ARM64 image by digest
 `sha256:6fca82f415f2a3270aec7d70b84e0d1b5b0d0e6260c7fd15eb4478d48db06485`.
-The launcher is `scripts/serve_qwen35.py`; it mounts the cache read-only, uses
+The launcher is `scripts/experiments/serve_qwen35.py`; it mounts the cache read-only, uses
 GPU 0, and publishes only a loopback port. It never stops existing services.
 
 The server uses a 32,768-token context, at most 16 active sequences, and a
@@ -47,13 +47,15 @@ verify that date-valued results durably complete their native reservations.
 
 ## Experiment
 
-First follow the README's pinned `.tau2` checkout and editable-install instructions.
-The runner checks that checkout's revision; benchmark data is not committed here.
+First follow the [tooling guide's pinned `.tau2` checkout instructions](../scripts/README.md).
+Install the optional tooling dependencies with `.venv/bin/pip install -e '.[experiments]'`.
+Run these repository tools from the checkout root. The runner checks the benchmark
+checkout's revision; benchmark data is not committed here.
 
 ```sh
-.venv/bin/python scripts/serve_qwen35.py \
+.venv/bin/python -m scripts.experiments.serve_qwen35 \
   --name leanguard-qwen35-4b-parallel --max-num-seqs 16 --prefix-caching --print-command
-.venv/bin/python -m leanguard.benchmark \
+.venv/bin/python -m scripts.experiments.benchmark \
   --total-tasks 100 --modes baseline generic --concurrency 12 \
   --output runs/qwen35-4b-leanltl-generic-200-20260907
 ```
@@ -101,7 +103,7 @@ chat-template validation, without dispatching tools. These are preflight tests,
 not model-quality samples:
 
 ```sh
-LEANGUARD_LIVE_TESTS=1 .venv/bin/pytest -q tests/test_rollout.py -k live_qwen_retry
+LEANGUARD_LIVE_TESTS=1 .venv/bin/pytest -q tests/experiments/test_rollout.py -k live_qwen_retry
 ```
 
 `batch.py` owns bounded scheduling and cooperative stopping; `rollout.py` owns
@@ -131,7 +133,7 @@ After the report is complete, score every attempted episode and verify each save
 native journal against the exact compiled LeanGuard binary used in the run:
 
 ```sh
-.venv/bin/python -m leanguard.score_saved \
+.venv/bin/python -m scripts.experiments.score_saved \
   runs/qwen35-4b-leanltl-generic-200-20260907
 ```
 

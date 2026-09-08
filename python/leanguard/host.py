@@ -84,16 +84,16 @@ class GuardHost:
         except OSError:
             self._lockfile.close()
             raise RuntimeError("another writer owns this guardrail journal") from None
-        self.db = sqlite3.connect(database, isolation_level=None, check_same_thread=False)
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS journal (
-                seq INTEGER PRIMARY KEY, command TEXT NOT NULL, response TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
-        """)
         try:
+            self.db = sqlite3.connect(database, isolation_level=None, check_same_thread=False)
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=FULL")
+            self.db.executescript("""
+                CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS journal (
+                    seq INTEGER PRIMARY KEY, command TEXT NOT NULL, response TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+            """)
             self.engine = Engine(domain, binary)
             expected = {"domain": domain, "principal": principal, "engine": self.engine.fingerprint}
             existing = dict(self.db.execute("SELECT key, value FROM metadata"))

@@ -5,9 +5,14 @@ import pytest
 
 pytest.importorskip("tau2")
 
-from leanguard.batch import ExperimentHalted
-from leanguard.benchmark import MODEL, llm_args
-from leanguard.rollout import (
+from leanguard import GuardHost
+from leanguard.tau import TauAdapter
+from tau2.agent.llm_agent import LLMAgent
+from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+
+from scripts.experiments.batch import ExperimentHalted
+from scripts.experiments.benchmark import MODEL, llm_args
+from scripts.experiments.rollout import (
     BoundedUser,
     ReliableAgent,
     customer_reason,
@@ -16,8 +21,6 @@ from leanguard.rollout import (
     protocol_problem,
     recovery_summary,
 )
-from tau2.agent.llm_agent import LLMAgent
-from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
 
 
 def test_generic_does_not_leak_rule_or_evidence():
@@ -305,3 +308,50 @@ def test_travel_sensor_binds_only_matching_owned_phone():
     world.is_abroad = False
     with pytest.raises(ValueError, match="fresh session"):
         observe_simulator_travel(host)
+
+
+@pytest.mark.parametrize(
+    "reason,allowed",
+    [
+        ("I have a health problem. I want Economy, not Basic Economy.", True),
+        ("I understand not changing the destination. Please cancel due to health reasons.", True),
+        ("It is not a health reason.", False),
+        ("I want to cancel due to a change of plan.", False),
+        ('La raison est "change de plan". Je veux annuler mes vols.', False),
+        ("Please cancel because my meeting has moved.", False),
+    ],
+)
+def test_customer_reason_reaches_native_cancellation_rule(tmp_path, reason, allowed):
+    from scripts.experiments.benchmark import observe_customer
+
+    adapter = TauAdapter("airline")
+    reservation = adapter.environment.tools.db.reservations["VA5SGQ"]
+    assert reservation.insurance == "yes"
+    with GuardHost(
+        "airline",
+        tmp_path / "journal.sqlite",
+        adapter,
+        principal="actor",
+        session="conversation",
+        clock=lambda: adapter.clock,
+    ) as host:
+        customer_ui = SimpleNamespace(user_messages=[])
+        observe_customer(
+            host,
+            customer_ui,
+            UserMessage(role="user", content=f"My ID is {reservation.user_id}. {reason}"),
+        )
+        args = {"reservation_id": reservation.reservation_id}
+        assert host.execute("get_reservation_details", args)["allow"]
+        observe_customer(host, customer_ui, UserMessage(role="user", content="Yes, please cancel."))
+        proposal = host.prepare("cancel_reservation", args)
+        host.confirm(proposal.id, True)
+        before = adapter.environment.get_db_hash()
+        result = host.execute("cancel_reservation", args, proposal_id=proposal.id)
+        assert result["allow"] is allowed, result
+        if allowed:
+            assert result["outcome"] == "success"
+            assert reservation.status == "cancelled"
+        else:
+            assert "airline.cancel" in result["reasons"]
+            assert adapter.environment.get_db_hash() == before

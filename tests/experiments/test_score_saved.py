@@ -9,8 +9,9 @@ pytest.importorskip("tau2")
 from leanguard.demo import MemoryTools
 from leanguard.engine import default_binary
 from leanguard.host import GuardHost
-from leanguard.score_saved import expected_episodes, replay_journal, score_episode
 from tau2.runner.helpers import get_tasks
+
+from scripts.experiments.score_saved import expected_episodes, replay_journal, score_episode
 
 
 def test_expected_episodes_includes_larger_domains_after_small_domain_exhausted():

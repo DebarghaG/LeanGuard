@@ -1,7 +1,8 @@
 from threading import Barrier
 
 import pytest
-from leanguard.batch import integration_error, run_batch
+
+from scripts.experiments.batch import integration_error, run_batch
 
 
 def test_failure_classification_excludes_policy_and_model_outcomes():

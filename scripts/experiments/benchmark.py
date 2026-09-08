@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.metadata
+import inspect
 import json
 import random
 import re
@@ -17,11 +18,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from leanguard.engine import default_binary, digest
+from leanguard.host import GuardHost
+from leanguard.tau import REVISION, GuardedEnvironment, TauAdapter
 from loguru import logger
 
 from .batch import ExperimentHalted, run_batch
-from .engine import default_binary, digest
-from .host import GuardHost
 from .rollout import (
     BoundedUser,
     ReliableAgent,
@@ -30,7 +32,6 @@ from .rollout import (
     observe_simulator_travel,
     recovery_summary,
 )
-from .tau import REVISION, GuardedEnvironment, TauAdapter
 
 MODEL = "Qwen/Qwen3.5-4B"
 ROOT = Path(__file__).resolve().parents[2]
@@ -886,10 +887,10 @@ def main():
         Path(__file__).with_name("batch.py").read_bytes()
     ).hexdigest()
     metadata["adapter_sha256"] = hashlib.sha256(
-        Path(__file__).with_name("tau.py").read_bytes()
+        Path(inspect.getfile(TauAdapter)).read_bytes()
     ).hexdigest()
     metadata["host_sha256"] = hashlib.sha256(
-        Path(__file__).with_name("host.py").read_bytes()
+        Path(inspect.getfile(GuardHost)).read_bytes()
     ).hexdigest()
     metadata["gpu"] = subprocess.check_output(
         ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"], text=True

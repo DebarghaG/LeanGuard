@@ -31,23 +31,45 @@ The demo denies an unapproved write, reads the document, records an explicit tru
 fixture confirmation, and executes the approved write. It does not ask an LLM to
 decide whether consent occurred.
 
-For the pinned benchmark integration and its tests:
+The optional benchmark adapter and evaluation setup are documented in
+[the repository tooling guide](scripts/README.md). Dataset downloaders, model
+launchers, scoring and replay runners live in `scripts/experiments/`; they are
+excluded from the installed `leanguard` package.
 
-```sh
-git clone https://github.com/sierra-research/tau2-bench.git .tau2
-git -C .tau2 checkout 672227c6b6676edc20d57ea53b7000262aae77b9
-.venv/bin/pip install -e .tau2
-.venv/bin/pytest -q tests/test_tau.py
+## Python integration
+
+The public library exports `Engine`, `EngineError`, `GuardHost`, `Adapter`,
+`Snapshot`, `Proposal`, and `ReadOnlyToolError`. The core has no third-party Python
+dependencies. MCP and the τ² adapter are optional integrations.
+
+Implement `Adapter.snapshot(action, arguments, customer)` and
+`Adapter.execute(action, arguments)` for your backend, with a shared `lock` that
+serializes **every** backend writer. A snapshot supplies authoritative facts,
+normalized arguments, declared units and a revision covering all relevant state.
+Changing those facts or state must change the revision. See the small
+[example adapter](python/leanguard/demo.py) and [adapter contract](python/leanguard/host.py).
+
+For actions that need consent, the integration sequence is:
+
+```python
+proposal = host.prepare(action, arguments)
+accepted = trusted_user_ui(proposal.details)  # Display the exact details; return a Boolean.
+host.confirm(proposal.id, accepted)
+result = host.execute(action, arguments, proposal_id=proposal.id)
 ```
 
-The editable checkout retains the benchmark's data directory and lets the rollout
-runner verify its revision. It is ignored by this repository, as are local models,
-virtual environments, journals, and experiment outputs.
+`host` is a `GuardHost` created with your adapter, journal path, trusted principal
+and conversation ID. Use it as a context manager so the native process, database
+and journal lock are closed. `execute` performs the native admission check before
+dispatch; callers should check `allow` and `outcome`. Use `ReadOnlyToolError` only
+for a certified read failure with no state change; other tool exceptions have an
+unknown outcome. MCP adapters additionally provide `tool_schemas()` and
+`mutating(action)`.
 
-The benchmark pin is `672227c6b6676edc20d57ea53b7000262aae77b9` of
-[tau2-bench](https://github.com/sierra-research/tau2-bench/tree/672227c6b6676edc20d57ea53b7000262aae77b9).
-These are instrumented current text-domain tests, not an unmodified original τ²
-leaderboard run. No LLM credentials or paid model calls are needed for these tests.
+The Python wheel does not bundle a compiled Lean executable. When using it outside
+an editable source checkout, supply `binary=Path(...)` to `Engine`/`GuardHost`, or
+set `LEANGUARD_BINARY` to the absolute path of the executable built by Lake. See
+[the guarantee boundary](docs/guarantees.md) before adapting a real backend.
 
 ## Native Lean DSL
 
@@ -71,7 +93,7 @@ an agent cannot upload or select replacement policy code at runtime. See
 ## Dogwood article examples
 
 ```sh
-.venv/bin/python -m leanguard.conformance
+.venv/bin/python -m scripts.conformance
 .venv/bin/pytest -q tests/test_dogwood.py
 ```
 

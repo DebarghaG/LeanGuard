@@ -8,7 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
-from leanguard.benchmark import local_endpoint, write_json
+
+from scripts.experiments.benchmark import local_endpoint, write_json
 
 
 def probe(endpoint, concurrency, requests, tokens):

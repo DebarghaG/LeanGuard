@@ -21,8 +21,8 @@ the existing sampling settings, 240-step limit, 1,800-second episode timeout,
 
 ```sh
 .venv/bin/python scripts/verify.py
-LEANGUARD_LIVE_TESTS=1 .venv/bin/pytest -q tests/test_rollout.py -k live_qwen_retry
-.venv/bin/python -m leanguard.benchmark \
+LEANGUARD_LIVE_TESTS=1 .venv/bin/pytest -q tests/experiments/test_rollout.py -k live_qwen_retry
+.venv/bin/python -m scripts.experiments.benchmark \
   --tasks-per-domain 1 --concurrency 9 \
   --output runs/qwen35-4b-leanltl-smoke-20260907
 ```

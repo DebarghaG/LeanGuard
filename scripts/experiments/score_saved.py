@@ -11,8 +11,9 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+from leanguard.engine import Engine, canonical, default_binary, digest
+
 from .benchmark import ROOT, executed_trajectory, write_json
-from .engine import Engine, canonical, default_binary, digest
 
 
 def expected_episodes(manifest):

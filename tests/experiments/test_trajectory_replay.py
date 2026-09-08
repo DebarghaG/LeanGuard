@@ -9,8 +9,15 @@ pytest.importorskip("tau2")
 from jsonschema import Draft202012Validator
 from leanguard.engine import Engine
 from leanguard.tau import TauAdapter
-from leanguard.trajectory_data import messages, signature
-from leanguard.trajectory_replay import Observations, classify, paired_responses, replay, translated
+
+from scripts.experiments.trajectory_data import messages, signature
+from scripts.experiments.trajectory_replay import (
+    Observations,
+    classify,
+    paired_responses,
+    replay,
+    translated,
+)
 
 
 @pytest.fixture(scope="module")
@@ -248,8 +255,8 @@ def test_incomplete_outcomes_and_unsupported_evidence_remain_unavailable():
 
 
 def test_saved_native_audits_cover_all_calls_and_detect_tampered_export(tmp_path):
-    from leanguard.trajectory_replay import run
-    from leanguard.trajectory_verify import verify
+    from scripts.experiments.trajectory_replay import run
+    from scripts.experiments.trajectory_verify import verify
 
     raw = record(
         [

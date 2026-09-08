@@ -8,7 +8,8 @@ from collections import Counter
 from contextlib import ExitStack
 from pathlib import Path
 
-from .engine import Engine, canonical
+from leanguard.engine import Engine, canonical
+
 from .trajectory_replay import classify
 
 

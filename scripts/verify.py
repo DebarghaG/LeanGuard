@@ -38,7 +38,7 @@ def main():
     run(sys.executable, "-m", "ruff", "check", "python", "tests", "scripts")
     run(sys.executable, "-m", "ruff", "format", "--check", "python", "tests", "scripts")
     run(sys.executable, "-m", "pytest", "-q")
-    run(sys.executable, "-m", "leanguard.conformance")
+    run(sys.executable, "-m", "scripts.conformance")
     from leanguard import Engine
 
     coverage = {}

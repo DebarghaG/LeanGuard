@@ -7,7 +7,7 @@ import json
 import subprocess
 from dataclasses import dataclass
 
-from .engine import default_binary
+from leanguard.engine import default_binary
 
 
 def event(time, action, kind, arguments, output=None, *, principal="alice", session="one"):

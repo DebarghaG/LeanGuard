@@ -7,7 +7,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from .engine import digest
+from leanguard.engine import digest
 
 DATASETS = {
     "snorkelai/Tau2-Bench-Verified-Airline-With-Code-Agents": "23e3afcdd9492e9e6cc240c124be07665a8d211b",

@@ -4,7 +4,9 @@ import pytest
 
 pytest.importorskip("tau2")
 
-from leanguard.benchmark import (
+from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+
+from scripts.experiments.benchmark import (
     RecordingEnvironment,
     SimulatedConfirmation,
     aggregate,
@@ -16,7 +18,6 @@ from leanguard.benchmark import (
     observe_customer,
     select_tasks,
 )
-from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
 
 
 @pytest.mark.parametrize(
@@ -139,7 +140,7 @@ def test_failed_episodes_stay_in_denominator():
 
 
 def test_halted_batch_cannot_dispatch_a_tool(tmp_path):
-    from leanguard.batch import ExperimentHalted
+    from scripts.experiments.batch import ExperimentHalted
 
     def dispatch(message):
         pytest.fail("a halted batch must not dispatch")
@@ -158,7 +159,7 @@ def test_customer_confirmation_requires_boolean(monkeypatch):
             "choices": [{"finish_reason": "stop", "message": {"content": '{"approved": "true"}'}}]
         },
     )
-    monkeypatch.setattr("leanguard.benchmark.httpx.post", lambda *a, **kw: response)
+    monkeypatch.setattr("scripts.experiments.benchmark.httpx.post", lambda *a, **kw: response)
     confirmation = SimulatedConfirmation("http://localhost:18000/v1", "local", 1)
     assert (
         confirmation(SimpleNamespace(details={"action": "cancel", "arguments": {}, "facts": {}}))
@@ -194,7 +195,7 @@ def test_confirmation_retries_only_unavailable_generation(monkeypatch, failure, 
             },
         )
 
-    monkeypatch.setattr("leanguard.benchmark.httpx.post", post)
+    monkeypatch.setattr("scripts.experiments.benchmark.httpx.post", post)
     ui = SimulatedConfirmation("http://localhost:18000/v1", "local", 1)
     assert ui(SimpleNamespace(details={"arguments": {}, "facts": {}})) is approved
     assert penalties == [0, 1.5]
@@ -221,7 +222,7 @@ def test_confirmation_denial_is_final_and_unavailability_has_one_retry(monkeypat
             },
         )
 
-    monkeypatch.setattr("leanguard.benchmark.httpx.post", post)
+    monkeypatch.setattr("scripts.experiments.benchmark.httpx.post", post)
     ui = SimulatedConfirmation("http://localhost:18000/v1", "local", 1)
     assert ui(SimpleNamespace(details={"arguments": {}, "facts": {}})) is False
     assert len(calls) == (2 if unavailable else 1)
@@ -259,7 +260,7 @@ def test_confirmation_receives_clarifications_and_actual_outcomes(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("leanguard.benchmark.httpx.post", post)
+    monkeypatch.setattr("scripts.experiments.benchmark.httpx.post", post)
     ui = SimulatedConfirmation("http://localhost:18000/v1", "local", 1, context=context)
     assert ui(
         SimpleNamespace(

@@ -3,13 +3,13 @@
 Source: the user-supplied [Introducing Dogwood: runtime verification for AI agents](https://aws.amazon.com/blogs/opensource/introducing-dogwood-runtime-verification-for-ai-agents/)
 article, published August 6, 2026. Policies are translated into ordinary Lean declarations
 in `LeanGuard/DogwoodExamples.lean`; fixtures and expected verdicts are data in
-`python/leanguard/conformance.py`. Python does not evaluate any policy.
+`scripts/conformance.py`. Python does not evaluate any policy.
 
 Run from the project directory:
 
 ```sh
 lake build
-.venv/bin/python -m leanguard.conformance
+.venv/bin/python -m scripts.conformance
 .venv/bin/pytest -q tests/test_dogwood.py
 ```
 

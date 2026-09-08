@@ -8,21 +8,22 @@ tool, embedded Python expression, or dataset reward verifier is executed.
 
 ## Reproduce
 
-Install the pinned editable τ² checkout as described in the README, build the
+Install the pinned editable τ² checkout as described in the
+[tooling guide](../scripts/README.md), build the
 native engine, and install the optional data readers:
 
 ```sh
-.venv/bin/pip install -e '.[replay]'
-.venv/bin/python -m leanguard.trajectory_replay \
+.venv/bin/pip install -e '.[experiments]'
+.venv/bin/python -m scripts.experiments.trajectory_replay \
   runs/external-rollouts --download --output runs/external-rollouts/full
-.venv/bin/python -m leanguard.trajectory_verify \
+.venv/bin/python -m scripts.experiments.trajectory_verify \
   runs/external-rollouts runs/external-rollouts/full
 ```
 
 Omit `--download` when snapshots are already present. The default processes every
 conversation; `--limit` is only for debugging. Output directories must be new so
 existing results cannot be silently overwritten. The four dataset revisions are
-pinned in `python/leanguard/trajectory_data.py`; `downloads.json` records file
+pinned in `scripts/experiments/trajectory_data.py`; `downloads.json` records file
 hashes. Dataset files, conversation text, and native audit journals stay under the
 ignored `runs/` directory.
 

@@ -139,6 +139,18 @@ def test_second_writer_and_wrong_principal_fail(host, tmp_path, adapter):
         GuardHost("example", tmp_path / "events.sqlite", adapter, principal="alice", session="two")
 
 
+def test_failed_journal_initialization_releases_writer_lock(tmp_path, adapter):
+    path = tmp_path / "journal.sqlite"
+    path.write_bytes(b"not a SQLite database")
+    # Retain the exception: garbage collection must not be needed to release resources.
+    with pytest.raises(sqlite3.DatabaseError) as failure:
+        GuardHost("example", path, adapter, principal="alice", session="one")
+    path.unlink()
+    with GuardHost("example", path, adapter, principal="alice", session="one") as host:
+        assert host.execute("read", {})["allow"]
+    assert failure.value is not None
+
+
 def test_forged_observation_api_rejected(host):
     with pytest.raises(ValueError):
         host.observe_trusted("confirmed", "document")

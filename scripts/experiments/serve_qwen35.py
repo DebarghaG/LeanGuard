@@ -1,6 +1,7 @@
 """Start an isolated Qwen3.5-4B vLLM server using this machine's cached artifacts."""
 
 import argparse
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,7 +12,16 @@ NAME = "leanguard-qwen35-4b-v022"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cache", type=Path, default=Path("/home/debargha/.cache/huggingface/hub"))
+    parser.add_argument(
+        "--cache",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "HF_HUB_CACHE",
+                Path(os.environ.get("HF_HOME", Path.home() / ".cache/huggingface")) / "hub",
+            )
+        ),
+    )
     parser.add_argument("--port", type=int, default=18000)
     parser.add_argument("--name", default=NAME)
     parser.add_argument("--max-num-seqs", type=int, default=16)
