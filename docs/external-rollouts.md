@@ -98,6 +98,52 @@ published-success rollout containing a denial is not automatically a false posit
 datasets can use different policies, successful tools can violate prose policy, and
 the recorded trace can lack facts available to a live host.
 
+## Comparison with the source evaluations
+
+The source projects were not trying to emit LeanGuard's internal evidence format.
+Snorkel compares bespoke tools with direct Python database access and evaluates
+final database differences against expected outcomes. Its verified release uses
+corrected tasks and an adapted code-agent policy; it intentionally samples both
+successful and failed rollouts. Refusing its code interface does not establish
+that a particular operation was wrong.
+
+fuvty constructs expected actions from database entities and generates GLM-5
+trajectories against those tasks. Its documented templates include an address
+change followed by an item change. The current cross-action `retail.modify_once`
+interpretation conflicts with that intended workflow. AReaL publishes synthetic
+SFT conversations and RL tasks with database-specific verification. Its
+[generation paper](https://arxiv.org/html/2601.22607v1) also describes trajectory
+checks for tool correctness, grounding, dialogue coherence and domain-policy
+compliance, followed by repairs. It studies errors introduced by the simulated
+customer. Describing that workflow as only final-state scoring understates its
+validation. Its RL database paths must not be assumed to identify an SFT
+conversation's initial state without a verified join. These are differences in
+evaluation contracts, not evidence of careless dataset construction.
+
+LeanGuard's intended additional guarantee is formal enforcement before an effect
+executes. The present playback cannot establish superiority over those methods:
+it has less environment evidence, lacks original LeanGuard approval events, and
+does not support the code interpreter. For example, sample 27 contains explicit
+approval of the exact shipping-address update; its missing bound approval event
+is an integration gap, not evidence that the actor misunderstood consent. Sample
+19 performs an explicitly approved booking through direct database writes; the
+unsupported interface alone says nothing about whether those writes are correct.
+
+For a consent comparison, reconstruct the authorized proposal from the preceding
+dialogue independently of the next recorded call. A validated structured receipt
+must identify the permitted effects, resources, payment, charges and conditions.
+Check the recorded action against that receipt and its temporal history. A second
+model simply approving the candidate is not an independent authorization guarantee.
+Use original backend snapshots only when their provenance and trajectory mapping
+are established; otherwise absent pre-call facts remain not assessable. Published
+task rewards and LeanGuard's native denials cannot by themselves establish which
+system better follows the same policy.
+
+See the source dataset cards linked above and the
+[random 50-call qualitative review](random-50-playback-review.md). The
+[over-refusal validation report](overrefusal-fixes.md) records the adapter fixes
+and complete native replay rerun.
+
 ## Artifacts and guarantees
 
 - `calls.jsonl`: one result per assistant call, including native rules, evidence

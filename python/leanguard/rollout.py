@@ -201,12 +201,36 @@ class ReliableAgent(LLMAgent):
 
 
 def customer_reason(content, previous=""):
-    """Literal, clause-scoped evidence, not a general language-understanding guarantee."""
+    """Preserve stated reasons; only explicit covered categories enable insurance.
+
+    This recognizer is not a general language-understanding guarantee. Unclassified
+    explanations remain verbatim evidence, never health/weather eligibility.
+    """
     lower = content.lower().replace("’", "'")
     choices = [
         r for r in ("health", "weather", "change of plan") if re.search(r"\b" + r + r"\b", lower)
     ]
     if not choices:
+        generic = re.search(
+            r"\b(?:change(?:ment)? de plans?|change of plans|(?:my )?plans? (?:have )?changed|"
+            r"booked by mistake)\b",
+            lower,
+        )
+        explained_cancellation = re.search(r"\bcancel(?:l?ing|lation|led)?\b", lower) and re.search(
+            r"\b(?:because|since|due to|reason is)\b", lower
+        )
+        if generic or explained_cancellation:
+            clauses = re.split(r"[.!?;\n]+|\b(?:but|however)\b", lower)
+            if generic and any(
+                generic.group() in clause
+                and re.search(r"\b(no|not|never|without|pas|jamais|\w+n't)\b", clause)
+                for clause in clauses
+            ):
+                return ""
+            if re.search(r"\b(?:not|never|don't)\s+(?:want to\s+)?cancel\b", lower):
+                return ""
+            # Keep a distinct prefix: raw prose must never equal a covered enum.
+            return "other: " + content.strip()
         return previous
     if len(choices) != 1:
         return ""

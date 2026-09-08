@@ -48,6 +48,22 @@ contexts, nor a proved state-machine refinement of Python execution. Finite-pref
 admission can enforce safety; it cannot guarantee eventual task completion, truthful
 free-form messages, refunds arriving days later, or a user eventually responding.
 
+Consent must constrain the acting model independently. For example, approval to
+buy a purple shirt for a specified charge cannot authorize the model to substitute
+a black shirt or a larger charge. The host binds approval to exact arguments and
+the state revision; the native temporal guard checks the matching, unconsumed,
+unrevoked witness. An acting model's claim that the customer approved is not such
+a witness.
+
+The benchmark's separate confirmation model is an **unverified consent authority**.
+If it mistakenly issues a fresh approval for the wrong shirt, the existing formula
+cannot distinguish that mistake from a real customer's approval of the new proposal.
+Better prompts, presentation, or model reasoning do not prove this boundary sound.
+End-to-end consent soundness requires independently authorized structured consent
+and enforcement that the proposed effects stay within it. Converting arbitrary
+dialogue into that consent remains an additional obligation; the current theorems
+must not be described as proving that a model understands natural-language consent.
+
 ## Enforcement protocol
 
 ```text

@@ -200,12 +200,13 @@ def test_aliases_are_narrow_and_prefix_identity_preserves_errors():
     assert signature(m) != signature(changed)
 
 
-def test_airline_identity_is_available_before_first_reservation_lookup():
+@pytest.mark.parametrize("customer", ["emma_kim_9957", "timothy_allen_d7d300"])
+def test_airline_identity_is_available_before_first_reservation_lookup(customer):
     state = Observations("airline")
-    state.user_message("My user ID is emma_kim_9957 and my reservation is EHGLP3.")
+    state.user_message(f"My user ID is {customer} and my reservation is EHGLP3.")
     facts, _, identity = state.facts("get_reservation_details", {"reservation_id": "EHGLP3"})
     assert identity
-    assert facts["customer_id"] == "emma_kim_9957"
+    assert facts["customer_id"] == customer
     assert "reservation" not in facts
     state = Observations("airline")
     state.user_message("emma_kim_9957 and daiki_muller_1116 both have bookings.")
@@ -214,6 +215,10 @@ def test_airline_identity_is_available_before_first_reservation_lookup():
     state.user_message("Please use my gift_card_123 for the payment.")
     assert state.customer == ""
     assert not state.supplied("gift_card_123")
+    state.user_message("The literal words are not_a_user_id.")
+    assert state.customer == ""
+    state.user_message("emma_kim_9957 and timothy_allen_d7d300 both have bookings.")
+    assert state.customer == ""
 
 
 def test_business_check_errors_are_not_misreported_as_absent_data():

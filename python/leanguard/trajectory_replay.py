@@ -145,7 +145,11 @@ class Observations:
             self.reason = customer_reason(content, self.reason)
             self.user_text.append(content)
             if self.domain == "airline" and not self.customer:
-                candidates = set(re.findall(r"\b[A-Za-z]+(?:_[A-Za-z]+)+_\d+\b", content))
+                candidates = set(
+                    re.findall(
+                        r"\b[A-Za-z]+(?:_[A-Za-z]+)+_(?=[A-Za-z0-9]*\d)[A-Za-z0-9]+\b", content
+                    )
+                )
                 candidates = {
                     c for c in candidates if not c.startswith(("credit_card_", "gift_card_"))
                 }
@@ -695,7 +699,11 @@ def run(root, output, limit=None):
         "normalized_sha256": hashlib.sha256(normalized_path.read_bytes()).hexdigest(),
         "source_sha256": {
             p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in (Path(__file__), Path(__file__).with_name("trajectory_data.py"))
+            for p in (
+                Path(__file__),
+                Path(__file__).with_name("trajectory_data.py"),
+                Path(__file__).with_name("rollout.py"),
+            )
         },
         "seconds": time.monotonic() - started,
         "coverage": json.loads((root / "coverage.json").read_text()),

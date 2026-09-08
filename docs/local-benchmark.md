@@ -153,11 +153,27 @@ All assistant tool calls pass through the existing durable `GuardHost`.
 User tools retain their distinct role and synchronize through the existing adapter.
 
 A separate customer-model call simulates the trusted confirmation UI for proposed
-mutations. It sees the actual canonical proposal and its own scenario, and must
-return a Boolean approval. Malformed/unavailable approval denies. This is **an
-instrumented experiment**, not the stock conversational confirmation mechanism;
+mutations. It sees the canonical proposal, visible customer/assistant dialogue,
+and completed host tool outcomes. It also sees the proposed item replacements,
+payment method and item price difference resolved from the snapshot. The hidden
+scenario is not supplied to this check: later explicit customer choices determine
+consent. Multiple approved orders can require separate calls; a pending question,
+withdrawal or unmet prerequisite does not authorize execution.
+
+The confirmation call uses Qwen's reasoning mode with an 8,192-token output cap
+and a 360-second timeout per attempt. A timeout or exhausted output budget gets
+one retry with a presence penalty of 1.5 to reduce repetitive generation. A valid
+denial is final; malformed verdicts also fail closed without a retry. Both attempts
+are recorded. The real-model regression checks cover this recovery path. This
+increases confirmation latency compared with the original 512-token check. It must
+return a Boolean approval; malformed, truncated or unavailable approval denies.
+This is **an instrumented experiment**, not the stock conversational confirmation mechanism;
 the customer simulator is an unverified stand-in for a real human/UI authority.
-The service agent cannot directly manufacture these approval events.
+The service agent cannot directly manufacture these approval events, but a mistake
+by the separate confirmation model can still mint incorrect consent evidence.
+Passing model regression tests does not establish semantic consent soundness;
+see the [guarantee boundary](guarantees.md) and
+[over-refusal validation report](overrefusal-fixes.md).
 
 Airline identity is observed only when the simulated customer's actual message
 literally contains an unambiguous database user ID. It is not taken from hidden

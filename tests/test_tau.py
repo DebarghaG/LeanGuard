@@ -164,6 +164,8 @@ def test_airline_valid_cancellation(tmp_path):
         ("I understand not changing the destination. Please cancel due to health reasons.", True),
         ("It is not a health reason.", False),
         ("I want to cancel due to a change of plan.", False),
+        ('La raison est "change de plan". Je veux annuler mes vols.', False),
+        ("Please cancel because my meeting has moved.", False),
     ],
 )
 def test_customer_reason_reaches_native_cancellation_rule(tmp_path, reason, allowed):

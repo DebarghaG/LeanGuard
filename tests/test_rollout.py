@@ -78,6 +78,42 @@ def test_reason_negation_does_not_cross_sentences(content, expected):
     assert customer_reason(content) == expected
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        'La raison est "change de plan". Je veux annuler mes vols.',
+        "My plans have changed. Please cancel the reservation.",
+        "Since there are no suitable same-day flights, I would like to proceed with canceling my reservation.",
+        "Please cancel because my meeting has moved.",
+        "I need to cancel a flight that I booked by mistake about 10 hours ago.",
+    ],
+)
+def test_uncategorized_cancellation_reason_is_preserved_without_insurance_entitlement(content):
+    reason = customer_reason(content, "health")
+    assert reason == "other: " + content
+    assert customer_reason("Yes, please proceed.", reason) == reason
+    assert reason not in {"health", "weather"}
+
+
+@pytest.mark.parametrize(
+    "content", ["Yes", "Please cancel my reservation", "Since I am here, can you show my bookings?"]
+)
+def test_no_reason_is_invented_from_confirmation_or_unrelated_explanation(content):
+    assert customer_reason(content) == ""
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "Ce n'est pas un changement de plan.",
+        "I have not booked by mistake.",
+        "I don't want to cancel because I still need the flight.",
+    ],
+)
+def test_negated_uncategorized_reason_clears_previous_evidence(content):
+    assert customer_reason(content, "health") == ""
+
+
 def test_protocol_defects_are_not_tool_actions():
     call = ToolCall(id="one", name="read", arguments={})
     assert protocol_problem(AssistantMessage(role="assistant", content=" ")) == "empty_response"
