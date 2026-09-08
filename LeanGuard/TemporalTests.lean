@@ -94,4 +94,36 @@ theorem errors_prevent_leanLTL_admission :
   rw [denied] at allowed
   contradiction
 
+def errorAt (id : String) : Formula Check := check "position_error" fun c ↦
+  if c.history.head?.any (fun e ↦ e.id == id) then .error "malformed observation" else .ok true
+
+theorem expired_once_error_ignored :
+    evaluationErrors errorContext (.once (some 10) (errorAt "old")) trace = [] := by decide
+
+theorem boundary_once_error_retained :
+    (evaluationErrors errorContext (.once (some 10) (errorAt "approval")) trace).isEmpty = false := by
+  decide
+
+theorem expired_previous_error_ignored :
+    evaluationErrors errorContext (.previous (some 9) failing) trace = [] := by decide
+
+theorem empty_previous_error_ignored :
+    evaluationErrors errorContext (.previous none failing) [] = [] := by decide
+
+theorem expired_since_error_ignored :
+    evaluationErrors errorContext (.since (some 10) (errorAt "old") (errorAt "old")) trace = [] := by
+  decide
+
+theorem since_intervening_error_retained :
+    (evaluationErrors errorContext (.since (some 10) (errorAt "now") .top) trace).isEmpty = false := by
+  decide
+
+theorem nested_error_window_uses_local_origin :
+    (evaluationErrors errorContext (.previous none (.once (some 10) (errorAt "old"))) trace).isEmpty = false := by
+  decide
+
+theorem future_error_ignored :
+    evaluationErrors errorContext (.once none (errorAt "future"))
+      [event "now" 90, event "future" 100] = [] := by decide
+
 end LeanGuard.TemporalTests

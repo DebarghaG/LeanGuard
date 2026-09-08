@@ -56,12 +56,6 @@ def covers (p : Json) (amount : Int) : Except String Bool := do
   if ← isGift p then return (← money p "balance") ≥ max amount 0
   return true
 
-def allSame (xs : Array Json) (key value : String) : Except String Bool :=
-  Data.all xs fun x ↦ do return (← str x key) == value
-
-def listMember (xs : Array Json) (key value : String) : Except String Bool :=
-  Data.any xs fun x ↦ do return (← str x key) == value
-
 def schemaRule (actions : List String) : Policy :=
   require "host.no_overlap" actions singleFlight "single call per conversation and resource"
 

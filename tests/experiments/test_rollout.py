@@ -1,4 +1,3 @@
-import os
 from types import SimpleNamespace
 
 import pytest
@@ -23,14 +22,15 @@ from scripts.experiments.rollout import (
 )
 
 
-def test_generic_does_not_leak_rule_or_evidence():
+def test_denial_feedback_does_not_leak_evidence():
     decision = {"allow": False, "reasons": ["airline.identity"], "evidence": ["secret"]}
     generic = denial_feedback(decision, False)
     detailed = denial_feedback(decision, True)
     assert generic["dispatched"] is False
     assert "violations" not in generic
+    assert "airline.identity" not in str(generic)
     assert detailed["violations"][0]["category"] == "prerequisite"
-    assert "secret" not in str(detailed)
+    assert all("secret" not in str(feedback) for feedback in (generic, detailed))
 
 
 def test_recovery_counts_incidents_separately_from_repeated_denials():
@@ -181,7 +181,7 @@ def test_retry_budget_exhausted_remains_failure(monkeypatch):
     assert len(agent.generation_records) == 2
 
 
-@pytest.mark.skipif(os.getenv("LEANGUARD_LIVE_TESTS") != "1", reason="requires local Qwen server")
+@pytest.mark.live
 @pytest.mark.parametrize("incoming_kind", ["user", "tool"])
 @pytest.mark.parametrize("defect", ["empty", "mixed", "multiple"])
 def test_live_qwen_retry(monkeypatch, incoming_kind, defect):

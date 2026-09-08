@@ -22,23 +22,43 @@ wheel. The supported enforcement interfaces are in `python/leanguard/`.
 .venv/bin/python scripts/verify.py
 ```
 
-The gate uses ordinary Lake/Lean commands and makes no model calls. Tests for
-optional integrations skip when their dependencies are absent. Keep production
+The gate uses ordinary Lake/Lean commands and excludes tests marked `live`. Ordinary
+`pytest` runs also exclude them; `pytest -m live` explicitly selects model calls.
+Tests for optional integrations skip when their dependencies are absent. Keep production
 code independent of `scripts`, model clients and dataset loaders. New evaluation
 utilities belong in `scripts/experiments/`; temporary analysis stays under an
-ignored run directory. Store reusable regression tests and concise results in Git,
-not downloaded datasets, journals, model weights or generated run outputs.
+ignored run directory. Keep reusable regression tests and maintained usage guides
+in Git; keep downloaded datasets, journals, model weights and generated run reports
+under ignored run directories.
+
+## Article conformance
+
+[Native policies](../LeanGuard/DogwoodExamples.lean) and
+[trace fixtures](conformance.py) encode the
+[Dogwood introduction](https://aws.amazon.com/blogs/opensource/introducing-dogwood-runtime-verification-for-ai-agents/).
+Run `.venv/bin/python -m scripts.conformance` after `lake build`.
+Forbid-only article snippets receive a base permit because LeanGuard defaults to
+deny. The fixtures use whole dollars; benchmark adapters use integer cents.
+Sale approvals require a real successful `ApproveSale` output with `approved = true`
+and matching historical inputs. That backend must consult a trusted approval
+authority. These approvals are reusable for one hour and correlated by principal;
+the library's `confirmed` helper is single-use and conversation-bound.
+The runner checks published expected verdicts, not cross-engine equivalence.
+See the [DSL](../docs/native-dsl.md) for query semantics and the
+[guarantee boundary](../docs/guarantees.md) for partial-history and live-admission limits.
 
 ## Optional τ² integration and experiments
 
 The benchmark revision is
 [`672227c6b6676edc20d57ea53b7000262aae77b9`](https://github.com/sierra-research/tau2-bench/tree/672227c6b6676edc20d57ea53b7000262aae77b9).
-Use an editable checkout to retain its data files and allow revision checks:
+The `tau` extra installs the adapter's schema validator; the pinned benchmark and
+its data must be installed separately. Use an editable checkout to retain its
+data files and allow revision checks:
 
 ```sh
 git clone https://github.com/sierra-research/tau2-bench.git .tau2
 git -C .tau2 checkout 672227c6b6676edc20d57ea53b7000262aae77b9
-.venv/bin/pip install -e .tau2 'jsonschema>=4.20'
+.venv/bin/pip install -e '.[tau]' -e .tau2
 .venv/bin/pytest -q tests/test_tau.py
 .venv/bin/pip install -e '.[experiments]'
 .venv/bin/pytest -q tests/experiments
@@ -59,9 +79,9 @@ they are not an unmodified historical τ² leaderboard run.
 | `python -m scripts.conformance` | Check native article-example conformance |
 
 Use `.venv/bin/python` for the commands above. Their argument parsers support
-`--help`, except conformance, which directly runs the fixed native checks. See
-[local model evaluation](../docs/local-benchmark.md) and
-[external playback](../docs/external-rollouts.md) for complete commands and limits.
+`--help`, except conformance, which directly runs the fixed native checks. See the
+[experiment guide](experiments/README.md) for local model evaluation, scoring and
+external playback commands and limits.
 The model launcher accepts `--cache`; its default respects `HF_HUB_CACHE`, then
 `HF_HOME`, then the current user's Hugging Face cache.
 

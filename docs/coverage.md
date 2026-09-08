@@ -19,6 +19,19 @@ The Python adapter extracts current database facts but never reads task solution
 evaluation criteria, or an agent-provided `allowed` bit. Money is normalized exactly to
 cents and GB quantities to thousandths; inexact conversion raises an error. Aircraft
 timestamps and telecom contract dates use the benchmark's fixed EST convention.
+Airline schedules, including explicit next-day arrival offsets, become per-date
+departure/arrival timestamps. Lean requires positive flight durations and arrival
+strictly before each following departure; no airport-specific minimum connection
+time is modeled. Recorded actual times take precedence over estimates, which take
+precedence over the schedule. Missing timing evidence fails closed.
+
+Bill observation requires the target customer's bill ID, status and numeric amount
+in an actual successful lookup response; empty or truncated lists do not establish
+observation of an omitted bill. This establishes prior observation, not freshness.
+Delay compensation uses the pre-dispatch snapshot retained on a successful change
+or cancellation, preserving the original disruption and eligibility after rebooking.
+The snapshot must match the customer, reservation and passenger count. Imported
+traces without that evidence cannot establish the historical entitlement.
 
 ## Explicit interpretations and remaining gaps
 
@@ -30,6 +43,12 @@ timestamps and telecom contract dates use the benchmark's fixed EST convention.
   conservative confirmation scope. The cancellation reason is trusted structured
   input; `health` and `weather` are canonical covered insurance labels. This does not
   establish that the reported reason is factually true.
+- Airline's `airline.observed` rule requires a preceding successful
+  `get_reservation_details` call before an update. A successful booking response
+  does not satisfy that rule, so updating a newly created reservation still requires
+  a lookup. Airline identity also requires a trusted user-supplied ID; a contact
+  lookup result alone does not satisfy that contract. Both choices can reject
+  workflows allowed by another dataset's policy or tool interface.
 - Telecom refueling currently enforces a positive amount no greater than 2GB **per
   call**, and that recorded usage exceeds the plan limit. The prose does not state an
   explicit reset period; a cumulative refill budget needs a chosen period and policy.
@@ -53,8 +72,8 @@ timestamps and telecom contract dates use the benchmark's fixed EST convention.
   queries. General output-schema inference and a first-order relational join language
   remain future work.
 - The real backend's postconditions (refund settlement, side-effect fidelity, external
-  inventory consistency) are outside the generic Lean proof. The local model pilot
-  and serving probes are instrumented experiments, not a complete benchmark score,
+  inventory consistency) are outside the generic Lean proof. Local model evaluation
+  and serving probes are instrumented experiments, not an official benchmark score,
   independently established false-denial rate, or production load test.
 
 ## Test levels
@@ -73,6 +92,6 @@ not establish semantic completeness of every English clause or exhaustive covera
 of every backend mutation. Such claims need a clause-by-clause formal specification
 and a larger differential benchmark campaign.
 
-The additional [Dogwood conformance suite](dogwood-conformance.md) covers all supplied
+The additional [Dogwood conformance suite](../scripts/conformance.py) covers all supplied
 article traces separately from the benchmark domain policies; its toy trading tools
 do not expand claims about τ-bench's English-policy completeness.

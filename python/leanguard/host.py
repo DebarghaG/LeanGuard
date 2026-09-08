@@ -75,17 +75,17 @@ class GuardHost:
         self.principal, self.session = principal, session
         self.binary, self.clock = binary, clock or (lambda: int(time.time()))
         self._lock = threading.RLock()
-        self.database = Path(database)
+        self.database = Path(database).resolve()
         self.database.parent.mkdir(parents=True, exist_ok=True)
         # The lock spans this object's lifetime and is released by close().
-        self._lockfile = open(str(database) + ".lock", "a+b")  # noqa: SIM115
+        self._lockfile = open(str(self.database) + ".lock", "a+b")  # noqa: SIM115
         try:
             fcntl.flock(self._lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self._lockfile.close()
             raise RuntimeError("another writer owns this guardrail journal") from None
         try:
-            self.db = sqlite3.connect(database, isolation_level=None, check_same_thread=False)
+            self.db = sqlite3.connect(self.database, isolation_level=None, check_same_thread=False)
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=FULL")
             self.db.executescript("""
@@ -117,11 +117,16 @@ class GuardHost:
     def _recover(self):
         self.engine.close()
         self.engine = Engine(self.domain, self.binary)
-        expected = self.db.execute("SELECT value FROM metadata WHERE key='engine'").fetchone()[0]
-        if self.engine.fingerprint != expected:
+        try:
+            expected = self.db.execute("SELECT value FROM metadata WHERE key='engine'").fetchone()[
+                0
+            ]
+            if self.engine.fingerprint != expected:
+                raise EngineError("compiled engine changed; replay requires the pinned binary")
+            self._replay()
+        except BaseException:
             self.engine.close()
-            raise EngineError("compiled engine changed; replay requires the pinned binary")
-        self._replay()
+            raise
 
     def _record(self, command: dict) -> dict:
         command = {"version": self.engine.version, **command}
@@ -135,21 +140,28 @@ class GuardHost:
             self.db.execute("COMMIT")
             return response
         except BaseException:
+            # Even a failed rollback must not leave speculative native state usable.
+            self.engine.close()
             self.db.execute("ROLLBACK")
             self._recover()
             raise
 
     def events(self) -> list[dict]:
+        with self._lock:
+            rows = self.db.execute("SELECT command, response FROM journal ORDER BY seq").fetchall()
         events = []
-        for command, response in self.db.execute(
-            "SELECT command, response FROM journal ORDER BY seq"
-        ):
+        snapshots = {}
+        for command, response in rows:
             command, response = json.loads(command), json.loads(response)
             event = dict(command["event"])
             if command["op"] == "admit":
                 event["input"] = command["arguments"]
+                event["facts"] = command["facts"]
+                if response["decision"]["allow"]:
+                    snapshots[event["id"]] = event["facts"]
             elif "outcome" in command:
                 event["output"] = command["outcome"]
+                event["facts"] = snapshots[event["id"]]
             events.append(event)
             if command["op"] == "admit" and response["decision"]["allow"]:
                 events.append({**event, "kind": "dispatch"})
@@ -330,13 +342,14 @@ class GuardHost:
             return {**decision, "outcome": "success", "result": value}
 
     def close(self):
-        if hasattr(self, "engine"):
-            self.engine.close()
-        if hasattr(self, "db"):
-            self.db.close()
-        if hasattr(self, "_lockfile") and not self._lockfile.closed:
-            fcntl.flock(self._lockfile, fcntl.LOCK_UN)
-            self._lockfile.close()
+        with self._lock:
+            if hasattr(self, "engine"):
+                self.engine.close()
+            if hasattr(self, "db"):
+                self.db.close()
+            if hasattr(self, "_lockfile") and not self._lockfile.closed:
+                fcntl.flock(self._lockfile, fcntl.LOCK_UN)
+                self._lockfile.close()
 
     def __enter__(self):
         return self

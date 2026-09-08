@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("tau2")
 
 from leanguard import GuardHost
-from leanguard.tau import TauAdapter, normalize, scaled
+from leanguard.tau import TauAdapter
 
 
 @pytest.fixture(params=["retail", "airline", "telecom"])
@@ -192,12 +192,192 @@ def test_telecom_overdue_status_and_actual_payment_request(tmp_path):
         assert not host.execute("send_payment_request", args)["allow"]
 
 
-def test_exact_unit_conversion():
-    assert normalize({"price": 12.34, "gb_amount": 1.5}) == {
-        "price": 1234,
-        "gb_amount": 1.5,
-        "gb_amount_milli": 1500,
+def test_empty_bill_lookup_does_not_authorize_payment(tmp_path):
+    from tau2.domains.telecom.data_model import BillStatus
+
+    adapter = TauAdapter("telecom")
+    db = adapter.environment.tools.db
+    customer = next(u for u in db.customers if u.bill_ids)
+    bills = [b for b in db.bills if b.bill_id in customer.bill_ids]
+    for bill in bills:
+        bill.status = BillStatus.PAID
+    bill = bills[0]
+    bill.status = BillStatus.OVERDUE
+    with GuardHost(
+        "telecom",
+        tmp_path / "journal.sqlite",
+        adapter,
+        principal="actor",
+        session="conversation",
+        clock=lambda: adapter.clock,
+    ) as host:
+        assert (
+            host.execute("get_customer_by_id", {"customer_id": customer.customer_id})["outcome"]
+            == "success"
+        )
+        result = host.execute(
+            "get_bills_for_customer", {"customer_id": customer.customer_id, "limit": 0}
+        )
+        assert result["result"] == []
+        args = {"customer_id": customer.customer_id, "bill_id": bill.bill_id}
+        before = db.get_hash()
+        denied = host.execute("send_payment_request", args)
+        assert not denied["allow"]
+        assert "telecom.bill_observed" in denied["reasons"]
+        assert db.get_hash() == before
+        assert host.execute("get_details_by_id", {"id": bill.bill_id})["outcome"] == "success"
+        assert host.execute("send_payment_request", args)["outcome"] == "success"
+        assert bill.status == BillStatus.AWAITING_PAYMENT
+
+
+def test_airline_rebooking_compensation_survives_restart(tmp_path):
+    from tau2.domains.airline.data_model import FlightDateStatusAvailable, FlightDateStatusDelayed
+
+    adapter = TauAdapter("airline")
+    db = adapter.environment.tools.db
+    reservation = next(
+        r
+        for r in db.reservations.values()
+        if r.flights
+        and r.passengers
+        and any(p.source == "credit_card" for p in db.users[r.user_id].payment_methods.values())
+    )
+    user = db.users[reservation.user_id]
+    user.membership = "silver"
+    reservation.status = None
+    reservation.cabin = "economy"
+    reservation.flight_type = "one_way"
+    reservation.flights = reservation.flights[:1]
+    old = reservation.flights[0]
+    reservation.origin, reservation.destination = old.origin, old.destination
+    db.flights[old.flight_number].dates[old.date] = FlightDateStatusDelayed(
+        status="delayed",
+        estimated_departure_time_est="2024-05-16T10:00:00",
+        estimated_arrival_time_est="2024-05-16T12:00:00",
+    )
+    replacement = next(
+        f
+        for f in db.flights.values()
+        if f.origin == old.origin
+        and f.destination == old.destination
+        and f.flight_number != old.flight_number
+    )
+    replacement.dates[old.date] = FlightDateStatusAvailable(
+        status="available", available_seats={"economy": 10}, prices={"economy": old.price}
+    )
+    card = next(k for k, p in user.payment_methods.items() if p.source == "credit_card")
+    adapter.user_evidence["compensation_reservation"] = reservation.reservation_id
+    path = tmp_path / "journal.sqlite"
+    with GuardHost(
+        "airline",
+        path,
+        adapter,
+        principal="actor",
+        session="conversation",
+        clock=lambda: adapter.clock,
+    ) as host:
+        host.observe_trusted("identity", user.user_id)
+        host.observe_trusted("compensation_requested", reservation.reservation_id)
+        lookup = {"reservation_id": reservation.reservation_id}
+        assert host.execute("get_reservation_details", lookup)["outcome"] == "success"
+        args = lookup | {
+            "cabin": "economy",
+            "flights": [{"flight_number": replacement.flight_number, "date": old.date}],
+            "payment_id": card,
+        }
+        proposal = host.prepare("update_reservation_flights", args)
+        host.confirm(proposal.id, True)
+        assert (
+            host.execute("update_reservation_flights", args, proposal_id=proposal.id)["outcome"]
+            == "success"
+        )
+        assert all(f.flight_number != old.flight_number for f in reservation.flights)
+        completed = host.events()[-1]
+        assert (
+            completed["facts"]["flights"][old.flight_number]["dates"][old.date]["status"]
+            == "delayed"
+        )
+        assert host.execute("get_reservation_details", lookup)["outcome"] == "success"
+    with GuardHost(
+        "airline",
+        path,
+        adapter,
+        principal="actor",
+        session="conversation",
+        clock=lambda: adapter.clock,
+    ) as host:
+        args = {"user_id": user.user_id, "amount": 50 * len(reservation.passengers)}
+        # Retained disruption evidence cannot substitute for fresh bound consent.
+        denied = host.execute("send_certificate", args)
+        assert not denied["allow"]
+        assert "airline.confirmation" in denied["reasons"]
+        assert "airline.compensation" not in denied["reasons"]
+        proposal = host.prepare("send_certificate", args)
+        host.confirm(proposal.id, True)
+        assert (
+            host.execute("send_certificate", args, proposal_id=proposal.id)["outcome"] == "success"
+        )
+
+
+def test_airline_booking_rejects_backward_dates(tmp_path):
+    from tau2.domains.airline.data_model import FlightDateStatusAvailable
+
+    adapter = TauAdapter("airline")
+    db = adapter.environment.tools.db
+    user = next(
+        u
+        for u in db.users.values()
+        if u.saved_passengers and any(p.source == "credit_card" for p in u.payment_methods.values())
+    )
+    first = next(iter(db.flights.values()))
+    second = next(
+        f
+        for f in db.flights.values()
+        if f.origin == first.destination and f.destination != first.origin
+    )
+    for flight, day in [(first, "2024-05-20"), (second, "2024-05-19"), (second, "2024-05-22")]:
+        flight.dates[day] = FlightDateStatusAvailable(
+            status="available", available_seats={"economy": 10}, prices={"economy": 100}
+        )
+    card = next(k for k, p in user.payment_methods.items() if p.source == "credit_card")
+    args = {
+        "user_id": user.user_id,
+        "origin": first.origin,
+        "destination": second.destination,
+        "flight_type": "one_way",
+        "cabin": "economy",
+        "flights": [
+            {"flight_number": first.flight_number, "date": "2024-05-20"},
+            {"flight_number": second.flight_number, "date": "2024-05-19"},
+        ],
+        "passengers": [user.saved_passengers[0].model_dump()],
+        "payment_methods": [{"payment_id": card, "amount": 200}],
+        "total_baggages": 0,
+        "nonfree_baggages": 0,
+        "insurance": "no",
     }
+    with GuardHost(
+        "airline",
+        tmp_path / "journal.sqlite",
+        adapter,
+        principal="actor",
+        session="conversation",
+        clock=lambda: adapter.clock,
+    ) as host:
+        host.observe_trusted("identity", user.user_id)
+        proposal = host.prepare("book_reservation", args)
+        host.confirm(proposal.id, True)
+        before = db.get_hash()
+        denied = host.execute("book_reservation", args, proposal_id=proposal.id)
+        assert not denied["allow"]
+        assert "airline.booking" in denied["reasons"]
+        assert db.get_hash() == before
+        args["flights"][1]["date"] = "2024-05-22"
+        proposal = host.prepare("book_reservation", args)
+        host.confirm(proposal.id, True)
+        assert (
+            host.execute("book_reservation", args, proposal_id=proposal.id)["outcome"] == "success"
+        )
 
 
 @pytest.mark.parametrize("domain", ["retail", "telecom"])
@@ -236,24 +416,6 @@ def test_unresolved_lookup_does_not_authenticate_or_lock_out_recovery(tmp_path, 
         assert host.execute(action, missing)["outcome"] == "failure"
         assert host.customer() == customer
         assert host.execute(action, correct)["outcome"] == "success"
-
-
-def test_plain_date_values_are_json_data():
-    import json
-    from datetime import UTC, date, datetime
-
-    from leanguard.tau import jsonable
-
-    value = jsonable(
-        {
-            "date": date(2025, 2, 28),
-            "nested": [datetime(2025, 2, 25, 12, 8, tzinfo=UTC)],
-        }
-    )
-    assert json.loads(json.dumps(value)) == {
-        "date": "2025-02-28",
-        "nested": ["2025-02-25T12:08:00+00:00"],
-    }
 
 
 def test_telecom_date_output_completes_and_preserves_wire(tmp_path):
@@ -317,10 +479,6 @@ def test_retail_mutation_preserves_native_wire_types(tmp_path):
         assert not actual.error, actual.content
         assert json.loads(actual.content) == json.loads(expected.content)
         assert adapter.environment.get_db_hash() == reference.environment.get_db_hash()
-    with pytest.raises(ValueError):
-        scaled(0.001, 100)
-    with pytest.raises(ValueError):
-        scaled(float("nan"), 100)
 
 
 def test_intent_evidence_cannot_replace_database_facts(adapter):

@@ -1,6 +1,7 @@
 import LeanGuard
 import LeanGuardProofs
 import LeanGuard.TemporalTests
+import LeanGuard.Replay
 import Lean.Util.CollectAxioms
 
 /-!
@@ -10,6 +11,8 @@ as a default Lake target makes an unfinished proof or a nonstandard axiom a buil
 
 run_cmd do
   let env ← Lean.getEnv
+  for required in #[``LeanGuard.handle, ``LeanGuard.Replay.run, ``LeanGuard.Replay.handle] do
+    unless env.contains required do throwError "missing audit entry point: {required}"
   let standard := #[``propext, ``Classical.choice, ``Quot.sound]
   let mut checked : Nat := 0
   for (name, _) in env.constants.toList do

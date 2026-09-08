@@ -35,6 +35,7 @@ def eventFromJson (j : Json) : Except String Event := do
     amount := ← nat j "amount"
     inputJson := ((j.getObjVal? "input").toOption.getD (Json.mkObj [])).compress
     outputJson := ((j.getObjVal? "output").toOption.getD .null).compress
+    factsJson := ((j.getObjVal? "facts").toOption.getD (Json.mkObj [])).compress
   }
 
 structure Runtime where
@@ -57,7 +58,7 @@ def validateEvent (s : Runtime) (e : Event) : Except String Unit := do
   if s.history.head?.any (fun previous ↦ e.time < previous.time) then
     throw "time moved backwards"
 
-def validateOutcome (s : Runtime) (e : Event) : Except String Unit := do
+def validateOutcome (s : Runtime) (e : Event) : Except String Event := do
   let dispatches := s.history.filter fun d ↦ d.id == e.id && d.kind == "dispatch"
   let some d := dispatches.head? | throw "outcome without dispatch"
   if d.principal != e.principal || d.session != e.session || d.action != e.action ||
@@ -66,6 +67,7 @@ def validateOutcome (s : Runtime) (e : Event) : Except String Unit := do
     throw "outcome does not match dispatch"
   if s.history.any (fun old ↦ old.id == e.id &&
       ["success", "failure", "unknown"].contains old.kind) then throw "duplicate outcome"
+  return d
 
 def handle (s : Runtime) (input : Json) : Except String (Runtime × Json) := do
   if (← nat input "protocol") != 1 then throw "unsupported protocol version"
@@ -85,8 +87,12 @@ def handle (s : Runtime) (input : Json) : Except String (Runtime × Json) := do
   if op == "audit" then
     let events ← (← Data.array input "history").toList.mapM eventFromJson
     let arguments ← field input "arguments"
-    let e := { e with inputJson := arguments.compress, outputJson := "null" }
-    let ctx : Context := ⟨e, arguments, ← field input "facts", e :: events⟩
+    let facts ← field input "facts"
+    let e := { e with
+      inputJson := arguments.compress
+      outputJson := "null"
+      factsJson := facts.compress }
+    let ctx : Context := ⟨e, arguments, facts, e :: events⟩
     let pack ← packFor s.domain
     let values := (pack.rules.filter (fun r ↦ r.applies e.action)).map fun r ↦
       (r.id, toJson (evaluate (atomValue ctx) r.condition ctx.history))
@@ -97,21 +103,27 @@ def handle (s : Runtime) (input : Json) : Except String (Runtime × Json) := do
     let e := match input.getObjVal? "outcome" with
       | .ok output => { e with outputJson := output.compress }
       | .error _ => e
-    if ["success", "failure", "unknown"].contains e.kind then
-      validateOutcome s e
-    else
+    let e ← if ["success", "failure", "unknown"].contains e.kind then do
+      let dispatch ← validateOutcome s e
+      pure { e with factsJson := dispatch.factsJson }
+    else do
       if !["confirmed", "revoked", "identity", "compensation_requested", "travelling",
           "user_action", "user_observation"].contains e.kind then throw "untrusted event kind"
       if s.history.any (fun old ↦ old.id == e.id) then throw "duplicate event id"
+      pure { e with factsJson := "{}" }
     let next := { s with history := e :: s.history, version := s.version + 1 }
     return (next, Json.mkObj [("version", toJson next.version)])
   if op == "admit" then
     let arguments ← field input "arguments"
-    let e := { e with inputJson := arguments.compress, outputJson := "null" }
+    let facts ← field input "facts"
+    let e := { e with
+      inputJson := arguments.compress
+      outputJson := "null"
+      factsJson := facts.compress }
     if e.kind != "request" then throw "admission needs a request event"
     if s.history.any (fun old ↦ old.id == e.id) then throw "duplicate request id"
     let context : Context := {
-      request := e, arguments := arguments, facts := ← field input "facts",
+      request := e, arguments := arguments, facts := facts,
       history := e :: s.history
     }
     let decision := decidePolicy (← packFor s.domain) context

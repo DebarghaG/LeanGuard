@@ -14,6 +14,7 @@
 | `project_membership`, `project_idempotent` | Explicit scope projection selects exactly matching keys and is stable |
 | `authorized_requirement`, `authorized_no_forbid` | Allow cannot bypass a mandatory rule or an applicable true forbid |
 | `decision_sound`, `decision_no_errors` | The actual decision's allow bit implies native authorization and an empty error list |
+| `evaluationErrors_eq_nil_iff` | Error collection equals the independent specification over applicable windows, scopes and Boolean branches |
 | `confirmation_has_witness`, `confirmation_not_consumed` | The actual confirmation formula requires a prior matching witness and no matching prior dispatch |
 | `confirmedWithin_preserves`, `confirmedWithin_recent_witness` | Adding expiry preserves the one-use guard and requires an in-window confirmation witness |
 | `query_membership`, `query_window` | A query selects exactly its matching events, all within its inclusive non-future window |
@@ -27,10 +28,14 @@
 | `native_trace_safe` | Every context on a LeanLTL trace satisfies the per-decision implication |
 | `native_trace_leanLTL_safe` | Every admitted context on a LeanLTL trace satisfies its complete translated policy, including the error gate |
 | `cancellation_correct` | The executable airline cancellation predicate matches its stated eligibility proposition |
+| `chronological_correct` | The itinerary timing check is equivalent to positive flight durations and arrival before every subsequent departure |
+| `delayResolved_witness` | Historical delay eligibility requires a correlated successful change/cancellation with a qualifying pre-dispatch snapshot |
+| `billRecorded_identity`, `recordedBills_witness` | A bill-list witness is an actual returned bill with matching bill/customer IDs |
 | `external_cannot_override` | Optional external approval cannot override a native denial |
 
 The default `LeanGuardAudit` build target audits transitive axiom dependencies of
 all public LeanGuard declarations in the imported library and theorem regressions.
+The audit explicitly includes the live runtime and offline replay entry points.
 `Audit.lean` also lists exported safety theorems for `#print axioms`, and the
 verification script requires every report. Only Lean's standard `propext`,
 `Classical.choice`, and `Quot.sound` are accepted. No `sorry`, `native_decide` axiom,
@@ -82,11 +87,17 @@ are correlated by IDs, event identity, normalized inputs, and amount; duplicate
 requests/outcomes are rejected. The existing `confirmed` guard consumes confirmation
 at dispatch, not on successful completion. The Dogwood article packs instead use
 reusable response approvals to preserve the article's semantics.
+The native monitor retains authoritative admission facts on the request and dispatch,
+then copies the matching dispatch's snapshot onto its validated outcome. Claimed
+facts in an outcome cannot replace that snapshot. Journal replay reconstructs it
+from the original admission commands.
 
 The journal is single-writer, uses SQLite WAL with `synchronous=FULL`, and pins the
 principal, domain, and compiled engine hash. A restart replays monitor commands and
 compares every decision without executing tools. Failure after a durable reservation
 but before a durable outcome leaves an unresolved dispatch; retries remain blocked.
+Failed recovery closes the native channel until a complete replay succeeds. Shutdown
+waits for the active tool and outcome recording before releasing the journal lock.
 The implementation does not claim exactly-once effects or automatically reconcile
 unknown outcomes. That needs a backend idempotency/reconciliation protocol.
 

@@ -36,11 +36,41 @@ def paymentRequest : Formula Check := check "overdue_and_no_other_payment_reques
     (← str bill "status") == "Overdue" &&
     (← Data.all bills fun b ↦ do return (← str b "status") != "Awaiting Payment")
 
+/-- A recorded bill must expose the target's identity, status and amount. -/
+def billRecorded (customer id : String) (bill : Json) : Bool :=
+  (str bill "bill_id").toOption == some id &&
+  (str bill "customer_id").toOption == some customer &&
+  (str bill "status").isOk &&
+  (match field bill "total_due" with | .ok (.num _) => true | _ => false)
+
+def recordedBills (customer id : String) (bills : List Json) : Bool :=
+  bills.any (billRecorded customer id)
+
+theorem billRecorded_identity (customer id : String) (bill : Json)
+    (h : billRecorded customer id bill = true) :
+    (str bill "bill_id").toOption = some id ∧
+    (str bill "customer_id").toOption = some customer := by
+  simp only [billRecorded, Bool.and_eq_true, beq_iff_eq] at h
+  exact h.1.1
+
+theorem recordedBills_witness (customer id : String) (bills : List Json)
+    (h : recordedBills customer id bills = true) :
+    ∃ bill ∈ bills, billRecorded customer id bill = true := List.any_eq_true.mp h
+
 def billObserved : Formula Check := check "bill_or_customer_bills_observed" fun c ↦ do
   let customer ← str c.facts "customer_id"
-  return c.history.any fun e ↦ sameConversation c.request e && e.kind == "success" &&
-    ((e.action == "get_details_by_id" && e.resource == c.request.resource) ||
-      (e.action == "get_bills_for_customer" && e.resource == customer))
+  return c.history.any fun e ↦
+    sameConversation c.request e && e.kind == "success" && e.time ≤ c.request.time &&
+    (match Json.parse e.outputJson with
+    | .ok output =>
+      if e.action == "get_details_by_id" && e.resource == c.request.resource then
+        billRecorded customer c.request.resource output
+      else if e.action == "get_bills_for_customer" && e.resource == customer then
+        match output.getArr? with
+        | .ok bills => recordedBills customer c.request.resource bills.toList
+        | .error _ => false
+      else false
+    | .error _ => false)
 
 def resume : Formula Check := check "resume_eligibility" fun c ↦ do
   let line ← fact c "line"

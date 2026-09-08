@@ -43,6 +43,20 @@ def observe(engine, e, output=None):
     )
 
 
+@pytest.mark.parametrize("now,allowed", [(3600, False), (3601, True), (4001, True)])
+def test_expired_malformed_approval_does_not_poison_fresh_approval(now, allowed):
+    with Engine("dogwood.approval") as engine:
+        old = {**approval(0, 100), "kind": "request"}
+        assert admit(engine, old)["allow"]
+        observe(engine, old, {})
+        fresh = {**approval(now - 1, 100), "kind": "request"}
+        assert admit(engine, fresh)["allow"]
+        observe(engine, fresh, {"approved": True})
+        result = admit(engine, sale(now, 100))
+        assert result["allow"] is allowed
+        assert bool(result["errors"]) is not allowed
+
+
 def test_live_monitor_reserves_before_any_outcome():
     with Engine("dogwood.sum") as engine:
         first, second, third = [transfer(t, 2000) for t in range(3)]

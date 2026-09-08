@@ -8,12 +8,17 @@ version = "0.1.0"
 description = "Native Lean temporal policies with a durable Python enforcement host"
 readme = "README.md"
 requires-python = ">=3.12"
+classifiers = ["Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3"]
+
+[project.urls]
+Repository = "https://github.com/DebarghaG/LeanGuard"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.12"]
 mcp = ["mcp==2.2.0"]
 experiments = ["httpx>=0.28", "loguru>=0.7", "jsonschema>=4.20", "pyarrow>=21", "huggingface-hub>=0.34"]
-tau = ["jsonschema>=4.20", "tau2 @ git+https://github.com/sierra-research/tau2-bench.git@672227c6b6676edc20d57ea53b7000262aae77b9"]
+# Install the pinned tau2 checkout separately; see scripts/README.md.
+tau = ["jsonschema>=4.20"]
 
 [project.scripts]
 leanguard = "leanguard.cli:main"
@@ -25,6 +30,8 @@ where = ["python"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+addopts = "-m 'not live'"
+markers = ["live: calls the local Qwen server; opt in with -m live"]
 
 [tool.ruff]
 line-length = 100

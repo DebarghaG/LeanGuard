@@ -45,8 +45,8 @@ class Engine:
             stderr=None,
             bufsize=0,
         )
-        os.set_blocking(self.process.stdin.fileno(), False)
         try:
+            os.set_blocking(self.process.stdin.fileno(), False)
             response = self.request({"op": "load", "domain": domain})
             self.manifest = response["manifest"]
             self.version = response["version"]
@@ -104,21 +104,24 @@ class Engine:
                         raise EngineError("invalid Lean version")
                     self.version = result["version"]
                 return result
-            except (OSError, ValueError, KeyError, EngineError) as exc:
+            except BaseException as exc:
                 self.close()
-                raise EngineError(str(exc)) from exc
+                if isinstance(exc, (OSError, ValueError, KeyError, EngineError)):
+                    raise EngineError(str(exc)) from exc
+                raise
 
     def close(self):
-        if self.process.poll() is None:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-        for stream in (self.process.stdin, self.process.stdout):
-            if stream:
-                stream.close()
+        with self._lock:
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait()
+            for stream in (self.process.stdin, self.process.stdout):
+                if stream:
+                    stream.close()
 
     def __enter__(self):
         return self

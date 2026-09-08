@@ -41,3 +41,8 @@ import LeanGuard.Query
 #print axioms LeanGuard.query_leanLTL_membership
 #print axioms LeanGuard.toLeanLTL_once_disj
 #print axioms LeanGuard.evaluate_once_disj
+#print axioms LeanGuard.evaluationErrors_eq_nil_iff
+#print axioms LeanGuard.Domains.Airline.chronological_correct
+#print axioms LeanGuard.Domains.Airline.delayResolved_witness
+#print axioms LeanGuard.Domains.Telecom.billRecorded_identity
+#print axioms LeanGuard.Domains.Telecom.recordedBills_witness

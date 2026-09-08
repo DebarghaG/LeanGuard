@@ -130,12 +130,15 @@ def evaluationErrors (ctx : Context) : Formula Check → History → List String
   | .top, _ | .bot, _ => []
   | .neg p, h => evaluationErrors ctx p h
   | .conj p q, h | .disj p q, h => evaluationErrors ctx p h ++ evaluationErrors ctx q h
-  | .previous _ p, h => evaluationErrors ctx p h.tail
-  | .once _ p, h => (List.range h.length).flatMap fun i ↦
-    evaluationErrors ctx p (h.drop i)
-  | .since _ p q, h => (List.range h.length).flatMap fun i ↦
-    evaluationErrors ctx q (h.drop i) ++ (List.range i).flatMap fun j ↦
-      evaluationErrors ctx p (h.drop j)
+  | .previous w p, h =>
+    if inWindow w h h.tail then evaluationErrors ctx p h.tail else []
+  | .once w p, h => (List.range h.length).flatMap fun i ↦
+    if inWindow w h (h.drop i) then evaluationErrors ctx p (h.drop i) else []
+  | .since w p q, h => (List.range h.length).flatMap fun i ↦
+    if inWindow w h (h.drop i) then
+      evaluationErrors ctx q (h.drop i) ++ (List.range i).flatMap fun j ↦
+        evaluationErrors ctx p (h.drop j)
+    else []
   | .within scope p, h => evaluationErrors ctx p (projectAtHead scope h)
 
 def validationErrors (pack : PolicyPack) (ctx : Context) : List String :=
@@ -145,7 +148,7 @@ def validationErrors (pack : PolicyPack) (ctx : Context) : List String :=
 def atomValue (ctx : Context) (a : Check) (h : History) : Bool :=
   ((a.run { ctx with history := h }).toOption).getD false
 
-/-- Validate every atom used by an applicable rule before Boolean evaluation. -/
+/-- Validate all Boolean branches at applicable temporal positions before admission. -/
 def decidePolicy (pack : PolicyPack) (ctx : Context) : Decision :=
   let atom := atomValue ctx
   let errors := validationErrors pack ctx

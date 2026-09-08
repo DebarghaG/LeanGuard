@@ -288,7 +288,18 @@ class Observations:
                         flights(item)
                 elif isinstance(v, dict) and "flight_number" in v:
                     flight = o["flights"].setdefault(v["flight_number"], {"dates": {}})
-                    flight.update({k: v[k] for k in ("origin", "destination") if k in v})
+                    flight.update(
+                        {
+                            k: v[k]
+                            for k in (
+                                "origin",
+                                "destination",
+                                "scheduled_departure_time_est",
+                                "scheduled_arrival_time_est",
+                            )
+                            if k in v
+                        }
+                    )
                     date = v.get("date") or args.get("date")
                     if date:
                         flight["dates"][date] = deepcopy(v)
@@ -568,8 +579,10 @@ def replay(record, engine, schemas, mutating, journal):
                 }
             )
             # Continue the original trace even when LeanGuard would block this call.
-            history.insert(0, {**request, "input": native_args})
-            history.insert(0, {**request, "kind": "dispatch", "input": native_args})
+            history.insert(0, {**request, "input": native_args, "facts": native_facts})
+            history.insert(
+                0, {**request, "kind": "dispatch", "input": native_args, "facts": native_facts}
+            )
             unsupported_history = unsupported_history or not supported
             # Even an error from a mutator/unknown tool does not certify no partial write.
             state.invalidate(
@@ -595,6 +608,8 @@ def replay(record, engine, schemas, mutating, journal):
                         "kind": "failure" if is_failure else "success",
                         "resource": outcome_resource,
                         "input": native_args,
+                        "output": value,
+                        "facts": native_facts,
                     },
                 )
         i = end

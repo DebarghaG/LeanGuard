@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import threading
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
@@ -54,10 +55,14 @@ def wire_text(value):
 
 
 def scaled(value, factor: int) -> int:
-    result = Decimal(str(value)) * factor
-    if not result.is_finite() or result != result.to_integral_value():
+    decimal = Decimal(str(value))
+    if not decimal.is_finite():
         raise ValueError("quantity is not exactly representable at the declared precision")
-    return int(result)
+    numerator, denominator = decimal.as_integer_ratio()
+    result, remainder = divmod(numerator * factor, denominator)
+    if remainder:
+        raise ValueError("quantity is not exactly representable at the declared precision")
+    return result
 
 
 def epoch(value: str) -> int:
@@ -65,6 +70,14 @@ def epoch(value: str) -> int:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=EST)
     return int(parsed.timestamp())
+
+
+def scheduled_epoch(day: str, clock: str) -> int:
+    """Pinned airline schedules use EST and an explicit +1 for next-day arrival."""
+    match = re.fullmatch(r"(\d{2}:\d{2}:\d{2})(?:\+(\d+))?", clock)
+    if match is None or date.fromisoformat(day).isoformat() != day:
+        raise ValueError("invalid airline schedule")
+    return epoch(f"{day}T{match[1]}") + int(match[2] or 0) * 86400
 
 
 def normalize(value, key=""):
@@ -81,6 +94,22 @@ def normalize(value, key=""):
                 result["contract_end_epoch"] = None if v is None else epoch(v) + 86399
         if key == "prices":
             result = {k: scaled(v, 100) for k, v in value.items()}
+        if "dates" in value:
+            for day, instance in result["dates"].items():
+                # Imported partial observations must not manufacture missing schedules.
+                for source, target in (
+                    ("scheduled_departure_time_est", "departure_epoch"),
+                    ("scheduled_arrival_time_est", "arrival_epoch"),
+                ):
+                    instance.pop(target, None)
+                    actual = source.replace("scheduled_", "actual_")
+                    estimated = source.replace("scheduled_", "estimated_")
+                    if actual in instance:
+                        instance[target] = epoch(instance[actual])
+                    elif estimated in instance:
+                        instance[target] = epoch(instance[estimated])
+                    elif source in value:
+                        instance[target] = scheduled_epoch(day, value[source])
         return result
     if isinstance(value, list):
         return [normalize(v) for v in value]

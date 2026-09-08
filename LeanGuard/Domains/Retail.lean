@@ -26,7 +26,7 @@ def replacementPayment : Formula Check := check "replacement_payment" fun c ↦ 
     return n + (← money item "price")) (0 : Int)
   return !original && (← covers (← payment c id) total)
 
-def validItems (exchange : Bool) : Formula Check := check "valid_item_replacements" fun c ↦ do
+def validItems : Formula Check := check "valid_item_replacements" fun c ↦ do
   let oldIds ← strings c.arguments "item_ids"
   let newIds ← strings c.arguments "new_item_ids"
   let orderItems ← array (← fact c "order") "items"
@@ -44,7 +44,6 @@ def validItems (exchange : Bool) : Formula Check := check "valid_item_replacemen
     let variant ← lookup (← field product "variants") newId
     if !(← bool variant "available") then return false
     difference := difference + (← money variant "price") - (← money old "price")
-  let _ := exchange
   covers (← paymentMethod c "payment_method_id") difference
 
 def validReturn : Formula Check := check "valid_return_and_refund" fun c ↦ do
@@ -87,9 +86,9 @@ def pack : PolicyPack := ⟨"retail", [
     (source "retail" "exchange once per order"),
   require "retail.payment" ["modify_pending_order_payment"] replacementPayment
     (source "retail" "different payment; gift card covers total"),
-  require "retail.modify_items" ["modify_pending_order_items"] (validItems false)
+  require "retail.modify_items" ["modify_pending_order_items"] validItems
     (source "retail" "same product, available variant, sufficient payment"),
-  require "retail.exchange_items" ["exchange_delivered_order_items"] (validItems true)
+  require "retail.exchange_items" ["exchange_delivered_order_items"] validItems
     (source "retail" "same product, available variant, sufficient payment"),
   require "retail.return" ["return_delivered_order_items"] validReturn
     (source "retail" "ordered items; original payment or existing gift card")

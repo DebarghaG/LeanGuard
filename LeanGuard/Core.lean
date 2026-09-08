@@ -22,6 +22,8 @@ structure Event where
   amount : Nat := 0
   inputJson : String := "{}"
   outputJson : String := "null"
+  /-- Authoritative pre-dispatch snapshot, retained on the matching outcome. -/
+  factsJson : String := "{}"
   deriving Repr, DecidableEq
 
 abbrev History := List Event

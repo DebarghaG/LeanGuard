@@ -112,22 +112,40 @@ def flightCost (c : Context) (fs : Array Json) (cabin : String) (passengers : Na
       total := total + (← (← lookup (← field instanceData "prices") cabin).getInt?) * passengers
   return total
 
+/-- Each flight has positive duration and arrives before every following departure. -/
+def chronological : List (Nat × Nat) → Bool
+  | [] => true
+  | (departure, arrival) :: rest => departure < arrival &&
+    rest.all (fun next ↦ arrival < next.1) && chronological rest
+
+theorem chronological_correct (flights : List (Nat × Nat)) :
+    chronological flights = true ↔
+      (∀ f ∈ flights, f.1 < f.2) ∧ flights.Pairwise (fun a b ↦ a.2 < b.1) := by
+  induction flights with
+  | nil => simp [chronological]
+  | cons f fs ih =>
+    rcases f with ⟨departure, arrival⟩
+    simp [chronological, ih, List.pairwise_cons, and_assoc, and_left_comm, and_comm]
+
 def itinerary (c : Context) (fs : Array Json) (origin destination trip : String)
     : Except String Bool := do
   if fs.isEmpty then return false
   let mut location := origin
   let mut visited := false
   let mut seen : List (String × String) := []
+  let mut times : List (Nat × Nat) := []
   for f in fs do
     let number ← str f "flight_number"
     let date ← str f "date"
     if seen.contains (number, date) then return false
     seen := (number, date) :: seen
     let flight ← lookup (← fact c "flights") number
+    let instanceData ← lookup (← field flight "dates") date
+    times := times ++ [(← nat instanceData "departure_epoch", ← nat instanceData "arrival_epoch")]
     if (← str flight "origin") != location then return false
     location := ← str flight "destination"
     visited := visited || location == destination
-  return visited && ((trip == "one_way" && location == destination) ||
+  return chronological times && visited && ((trip == "one_way" && location == destination) ||
     (trip == "round_trip" && location == origin))
 
 def booking : Formula Check := check "booking_constraints" fun c ↦ do
@@ -193,23 +211,51 @@ def flightUpdate : Formula Check := check "flight_change_constraints" fun c ↦ 
   if kind == "credit_card" then return true
   return (← money p "amount") ≥ max (total - oldTotal * n) 0
 
-def compensation : Formula Check := check "compensation_eligibility_and_amount" fun c ↦ do
+def compensationEligible (c : Context) : Except String Bool := do
   let r ← fact c "reservation"
   let member ← str (← fact c "user") "membership"
-  let eligible := ["silver", "gold"].contains member || (← str r "insurance") == "yes" ||
+  return ["silver", "gold"].contains member || (← str r "insurance") == "yes" ||
     (← str r "cabin") == "business"
+
+/-- The matching outcome carries the authoritative snapshot from before dispatch.
+Missing or malformed imported snapshots cannot supply a disruption witness. -/
+def delayedSnapshot (c : Context) (e : Event) : Except String Bool := do
+  let before := { c with facts := ← Json.parse e.factsJson }
+  let r ← fact before "reservation"
+  let customer ← str c.facts "customer_id"
+  if (← str before.facts "customer_id") != customer ||
+      (← str r "user_id") != customer ||
+      (← str r "reservation_id") != c.request.resource then return false
+  if (← array r "passengers").size != (← array (← fact c "reservation") "passengers").size then
+    return false
+  if !(← compensationEligible before) then return false
+  Data.any (← array r "flights") fun f ↦ do return (← flightStatus before f) == "delayed"
+
+def delayedChange (c : Context) (e : Event) : Bool :=
+  sameResource c.request e && sameConversation c.request e && e.time ≤ c.request.time &&
+    e.kind == "success" && ["cancel_reservation", "update_reservation_flights"].contains e.action &&
+    (delayedSnapshot c e).toOption == some true
+
+def delayResolved (c : Context) : Bool := c.history.any (delayedChange c)
+
+theorem delayResolved_witness (c : Context) (h : delayResolved c = true) :
+    ∃ e ∈ c.history, sameResource c.request e = true ∧ sameConversation c.request e = true ∧
+      e.time ≤ c.request.time ∧ e.kind = "success" ∧
+      ["cancel_reservation", "update_reservation_flights"].contains e.action = true ∧
+      (delayedSnapshot c e).toOption = some true := by
+  obtain ⟨e, mem, witness⟩ := List.any_eq_true.mp h
+  exact ⟨e, mem, by simpa [delayedChange, and_assoc] using witness⟩
+
+def compensation : Formula Check := check "compensation_eligibility_and_amount" fun c ↦ do
+  let r ← fact c "reservation"
   let requested := c.history.any fun e ↦ sameConversation c.request e &&
     e.kind == "compensation_requested" && e.resource == c.request.resource
-  let fs ← array r "flights"
-  let cancelled ← Data.any fs fun f ↦ do return (← flightStatus c f) == "cancelled"
-  let delayed ← Data.any fs fun f ↦ do return (← flightStatus c f) == "delayed"
-  let changed := c.history.any fun e ↦ sameResource c.request e &&
-    sameConversation c.request e && e.kind == "success" &&
-      ["cancel_reservation", "update_reservation_flights"].contains e.action
+  if !requested then return false
   let n := (← array r "passengers").size
   let amount ← nat c.arguments "amount"
-  return eligible && requested && ((cancelled && amount == 10000 * n) ||
-    (delayed && changed && amount == 5000 * n))
+  if amount == 5000 * n && delayResolved c then return true
+  if amount != 10000 * n || !(← compensationEligible c) then return false
+  Data.any (← array r "flights") fun f ↦ do return (← flightStatus c f) == "cancelled"
 
 def pack : PolicyPack := ⟨"airline", [
   permit "airline.tools" actions,

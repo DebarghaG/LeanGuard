@@ -116,6 +116,53 @@ def test_serial_batch_only_exposes_completed_earlier_call(retail):
     assert calls[1]["rules"]["host.no_overlap"]
 
 
+@pytest.mark.parametrize("returned_bill", [False, True])
+def test_replay_bill_observation_uses_recorded_output(returned_bill):
+    adapter = TauAdapter("telecom")
+    schemas = {a: Draft202012Validator(s["parameters"]) for a, s in adapter.tool_schemas().items()}
+    mutations = {a for a in schemas if adapter.mutating(a)}
+    customer = {"customer_id": "c", "bill_ids": ["b"], "line_ids": []}
+    bill = {"customer_id": "c", "bill_id": "b", "status": "Overdue", "total_due": 10.5}
+    output = [bill] if returned_bill else []
+    raw = [
+        {"role": "assistant", "tool_calls": [tool("get_customer_by_id", {"customer_id": "c"})]},
+        {"role": "tool", "content": json.dumps(customer)},
+        {"role": "assistant", "tool_calls": [tool("get_bills_for_customer", {"customer_id": "c"})]},
+        {"role": "tool", "content": json.dumps(output)},
+        {
+            "role": "assistant",
+            "tool_calls": [tool("send_payment_request", {"customer_id": "c", "bill_id": "b"})],
+        },
+    ]
+    journal = io.StringIO()
+    with Engine("telecom") as engine:
+        calls, _ = replay(record(raw) | {"domain": "telecom"}, engine, schemas, mutations, journal)
+    assert calls[-1]["rules"]["telecom.bill_observed"] is returned_bill
+    commands = [json.loads(line)["command"] for line in journal.getvalue().splitlines()]
+    outcome = commands[-1]["history"][0]
+    assert outcome["output"] == output
+    assert "bill" not in outcome["facts"]  # Its own output was unavailable before dispatch.
+
+
+def test_replay_preserves_observed_flight_schedule():
+    from leanguard.tau import epoch, normalize
+
+    state = Observations("airline")
+    output = {
+        "flight_number": "F1",
+        "origin": "SFO",
+        "destination": "JFK",
+        "date": "2024-05-20",
+        "scheduled_departure_time_est": "23:00:00",
+        "scheduled_arrival_time_est": "07:00:00+1",
+        "status": "available",
+    }
+    state.ingest("search_direct_flight", {"date": "2024-05-20"}, [output])
+    native = normalize(state.objects["flights"])["F1"]["dates"]["2024-05-20"]
+    assert native["departure_epoch"] == epoch("2024-05-20T23:00:00")
+    assert native["arrival_epoch"] == epoch("2024-05-21T07:00:00")
+
+
 def test_recorded_code_is_never_executed_or_accepted_as_facts(retail, tmp_path):
     marker = tmp_path / "executed"
     expression = f"__import__('pathlib').Path({str(marker)!r}).touch()"

@@ -12,7 +12,6 @@ class MemoryTools:
         self.lock = threading.RLock()
         self.value = "initial"
         self.calls = []
-        self.fail = False
 
     def snapshot(self, action, arguments, customer):
         return Snapshot(
@@ -25,8 +24,6 @@ class MemoryTools:
 
     def execute(self, action, arguments):
         self.calls.append((action, deepcopy(arguments)))
-        if self.fail:
-            raise RuntimeError("simulated uncertain outcome")
         if action == "write":
             self.value = arguments["value"]
         return {"value": self.value}

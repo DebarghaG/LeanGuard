@@ -27,12 +27,14 @@ or the language-to-evidence component must be treated as an unverified assumptio
 timestamp, and kind. Histories are newest-first and include the current request.
 The runtime distinguishes requests, reserved dispatches, successful/failed/unknown
 outcomes, and trusted user observations. Only `admit` makes a dispatch decision.
-Events also retain `inputJson` and `outputJson`: native strings containing serialized
+Events also retain `inputJson`, `outputJson` and `factsJson`: native strings containing serialized
 JSON, preserving decidable structural event equality. `EventField α` decodes nested
 paths into typed Lean values with explicit errors; these strings are data, never code.
 Admission supplies historical inputs from the actual normalized arguments, discards
 any claimed request output, and validates outcome input/amount against its dispatch.
-The host supplies actual tool results as output. Inputs use the adapter's normalized
+`factsJson` records the authoritative admission snapshot. A validated outcome inherits
+it from its dispatch; an outcome payload cannot replace those facts. The host supplies
+actual tool results as output. Inputs and admission facts use the adapter's normalized
 units; output payloads retain the tool's original units unless an adapter explicitly
 normalizes them. A query must choose a field and unit convention consistently.
 
@@ -47,6 +49,11 @@ is allowed exactly when at least one matching permit holds, all matching require
 hold, no matching forbid holds, and no applicable predicate evaluation reports an
 error. A broad permit cannot bypass a `require`. Errors are not converted into a
 successful negation or hidden by an unrelated successful disjunct.
+Temporal error collection follows each operator's window and scope. `previous`
+checks its operand only when the previous position exists in the window; `once`
+checks all in-window candidates; `since` also checks every intervening left operand
+for those candidates. Expired or future candidate positions do not introduce errors.
+`evaluationErrors_eq_nil_iff` proves this against the separate `ErrorFree` specification.
 
 ## Temporal operators
 
@@ -86,8 +93,9 @@ binary fingerprint, and displayed proposal. Neither an agent's “yes” nor an 
 tool response creates a confirmation event.
 `confirmedWithin seconds` adds an inclusive expiry measured from the decision's clock
 while preserving the same single-use and revocation conditions. `confirmed` itself
-remains unbounded for existing packs. The article examples deliberately use a separate,
-reusable `ApproveSale` response predicate with a one-hour lifetime.
+remains unbounded for existing packs. The [article examples](../LeanGuard/DogwoodExamples.lean)
+deliberately use a separate, reusable `ApproveSale` response predicate with a
+one-hour lifetime.
 
 `observed actions` requires a successful same-conversation, same-resource tool event.
 It is evidence that a read occurred, not a proof that it is still fresh. Current
@@ -128,7 +136,7 @@ accept nested field paths and an explicitly typed decoder.
 Queries do not add hypothetical dispatches. Use the existing `quota` helper when the
 desired rule is a dispatch budget including the proposed candidate. Counting only
 completed outcomes is not safe for limiting in-flight effects. See the executable
-negative control in the conformance runner.
+negative control in the [conformance runner](../scripts/conformance.py).
 
 ## Add a pack
 

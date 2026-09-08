@@ -1,15 +1,26 @@
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from leanguard import Engine, EngineError, GuardHost
 from leanguard.demo import MemoryTools
 
 
+class FaultyTools(MemoryTools):
+    fail = False
+
+    def execute(self, action, arguments):
+        if self.fail:
+            self.calls.append((action, arguments.copy()))
+            raise RuntimeError("simulated uncertain outcome")
+        return super().execute(action, arguments)
+
+
 @pytest.fixture
 def adapter():
-    return MemoryTools()
+    return FaultyTools()
 
 
 @pytest.fixture
@@ -41,12 +52,11 @@ def test_denied_write_never_reaches_tool(host, adapter):
     assert adapter.value == "initial"
 
 
-def test_valid_workflow_and_reuse(host, adapter):
+def test_valid_workflow(host, adapter):
     proposal = approved(host)
     result = host.execute("write", {"value": "new"}, proposal_id=proposal.id)
     assert result["outcome"] == "success"
     assert adapter.value == "new"
-    assert not host.execute("write", {"value": "new"}, proposal_id=proposal.id)["allow"]
     assert len(adapter.calls) == 2
 
 
@@ -75,14 +85,18 @@ def test_resource_read_is_correlated(host):
 
 
 def test_concurrent_same_approval_only_dispatches_once(host, adapter):
-    proposal = approved(host)
+    # Keep the revision unchanged so only native approval consumption prevents reuse.
+    proposal = approved(host, value="initial")
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(
-                lambda _: host.execute("write", {"value": "new"}, proposal_id=proposal.id), range(2)
+                lambda _: host.execute("write", {"value": "initial"}, proposal_id=proposal.id),
+                range(2),
             )
         )
     assert sum(result["allow"] for result in results) == 1
+    denied = next(result for result in results if not result["allow"])
+    assert denied["reasons"] == ["example.confirm"]
     assert [action for action, _ in adapter.calls].count("write") == 1
 
 
@@ -123,20 +137,32 @@ def test_restart_replays_without_dispatch(tmp_path, adapter):
     with GuardHost(
         "example", path, adapter, principal="alice", session="one", clock=lambda: 100
     ) as host:
-        proposal = approved(host)
-        host.execute("write", {"value": "new"}, proposal_id=proposal.id)
+        proposal = approved(host, value="initial")
+        assert (
+            host.execute("write", {"value": "initial"}, proposal_id=proposal.id)["outcome"]
+            == "success"
+        )
         version = host.engine.version
     with GuardHost(
         "example", path, adapter, principal="alice", session="one", clock=lambda: 100
     ) as host:
         assert host.engine.version == version
         assert len(adapter.calls) == 2
-        assert not host.execute("write", {"value": "new"}, proposal_id=proposal.id)["allow"]
+        denied = host.execute("write", {"value": "initial"}, proposal_id=proposal.id)
+        assert not denied["allow"]
+        assert denied["reasons"] == ["example.confirm"]
 
 
-def test_second_writer_and_wrong_principal_fail(host, tmp_path, adapter):
+def test_second_writer_is_rejected(host, tmp_path, adapter):
     with pytest.raises(RuntimeError, match="writer"):
         GuardHost("example", tmp_path / "events.sqlite", adapter, principal="alice", session="two")
+
+
+def test_symlink_cannot_bypass_journal_writer_lock(host, tmp_path, adapter):
+    alias = tmp_path / "alias.sqlite"
+    alias.symlink_to(host.database)
+    with pytest.raises(RuntimeError, match="writer"):
+        GuardHost("example", alias, adapter, principal="alice", session="one")
 
 
 def test_failed_journal_initialization_releases_writer_lock(tmp_path, adapter):
@@ -182,6 +208,89 @@ def test_journal_write_failure_prevents_dispatch(host, adapter):
     assert host.engine.version == 0
     host.db.execute("DROP TRIGGER refuse_journal")
     assert host.execute("read", {})["outcome"] == "success"
+
+
+def test_failed_recovery_keeps_subsequent_calls_disabled(host, adapter):
+    host.execute("read", {})
+    host.db.execute("UPDATE journal SET response='{}' WHERE seq=2")
+    host.engine.close()
+    for _ in range(2):
+        with pytest.raises(EngineError, match="replay diverged"):
+            host.execute("read", {})
+        assert host.engine.process.poll() is not None
+    assert len(adapter.calls) == 1
+
+
+def test_rollback_failure_discards_uncommitted_engine_state(host, adapter, monkeypatch):
+    db = host.db
+
+    class BrokenJournal:
+        def execute(self, sql, *args):
+            if sql.startswith("INSERT INTO journal") or sql == "ROLLBACK":
+                raise sqlite3.OperationalError("injected storage failure")
+            return db.execute(sql, *args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(host, "db", BrokenJournal())
+        with pytest.raises(sqlite3.OperationalError, match="injected"):
+            host.execute("read", {})
+        assert host.engine.process.poll() is not None
+        assert adapter.calls == []
+    db.execute("ROLLBACK")
+    with pytest.raises(EngineError, match="unavailable"):
+        host.execute("read", {})
+    assert host.execute("read", {})["outcome"] == "success"
+
+
+def test_close_waits_for_tool_outcome_before_releasing_writer(host, adapter, monkeypatch):
+    entered, release, closing = Event(), Event(), Event()
+    execute = adapter.execute
+
+    def blocked_tool(action, arguments):
+        entered.set()
+        assert release.wait(5)
+        return execute(action, arguments)
+
+    def close():
+        closing.set()
+        host.close()
+
+    monkeypatch.setattr(adapter, "execute", blocked_tool)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        execution = pool.submit(host.execute, "read", {})
+        try:
+            assert entered.wait(5)
+            shutdown = pool.submit(close)
+            assert closing.wait(5)
+            with pytest.raises(TimeoutError):
+                shutdown.result(timeout=0.1)
+            with pytest.raises(RuntimeError, match="writer"):
+                GuardHost("example", host.database, adapter, principal="alice", session="one")
+        finally:
+            release.set()
+        assert execution.result(timeout=5)["outcome"] == "success"
+        shutdown.result(timeout=5)
+    with GuardHost("example", host.database, adapter, principal="alice", session="one") as reopened:
+        assert reopened.events()[-1]["kind"] == "success"
+
+
+def test_interrupted_engine_request_cannot_reuse_channel(monkeypatch):
+    import os
+
+    with Engine("example") as engine:
+        read = os.read
+
+        def interrupted_read(*args):
+            read(*args)
+            raise KeyboardInterrupt
+
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "read", interrupted_read)
+            with pytest.raises(KeyboardInterrupt):
+                engine.request({"op": "load", "domain": "example"})
+        assert engine.process.poll() is not None
+        with pytest.raises(EngineError, match="unavailable"):
+            engine.request({"op": "load", "domain": "example"})
 
 
 def test_unknown_outcome_survives_conversation_change(tmp_path, adapter):

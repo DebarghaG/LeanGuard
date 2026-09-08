@@ -3,9 +3,9 @@
 LeanGuard's temporal language has a compositional interpretation in the pinned
 LeanLTL dependency. `Formula.toLeanLTL` uses the completed `TraceSet` library directly;
 it does not call LeanGuard's evaluator or its older `Holds` specification.
-The sibling vendored checkout and Lake's dependency both identify revision
-`7514f6f035e4b8944299f02ac80ba7145a2a1f29`. The Lake pin remains portable to standalone
-checkouts; no sibling-directory dependency or modifications to LeanLTL are required.
+Lake pins revision `7514f6f035e4b8944299f02ac80ba7145a2a1f29` in
+[lake-manifest.json](../lake-manifest.json). Standalone checkouts need no
+sibling-directory dependency or modifications to LeanLTL.
 
 ## Representation and boundaries
 
@@ -124,6 +124,3 @@ Python execution, timestamp authenticity, or the external host's event stream.
 The infinite-context theorem is a global safety implication, not a decision
 procedure for arbitrary infinite-trace properties or a liveness guarantee. See
 [the guarantee boundary](guarantees.md).
-
-The [integration validation report](leanltl-validation.md) records the proof audit,
-tests, and real Qwen3.5-4B τ² smoke run, including the model-run failures.
