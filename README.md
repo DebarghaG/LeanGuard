@@ -14,19 +14,15 @@ implemented examples and their assumptions.
 This is `0.2.0rc2`, a source release candidate for dogfooding. LeanGuard's code,
 examples, documentation, and policy-authoring skill are MIT-licensed.
 
-Requirements: Linux, Python 3.12, Git, and elan. The repository pins the Lean
-toolchain, LeanLTL fork, and mathlib dependencies.
+Requirements: Linux, Python 3.12+ with `venv`, Git, and curl. The setup command
+installs elan if needed, fetches the pinned Lean toolchain and LeanLTL/mathlib
+dependencies, builds the native runtime, and installs Python into `.venv`.
 
 ```sh
 git clone https://github.com/DebarghaG/LeanGuard.git
 cd LeanGuard
 git checkout v0.2.0-rc2
-lake update
-lake exe cache get
-lake build
-python3.12 -m venv .venv
-.venv/bin/pip install -e .
-.venv/bin/leanguard demo
+bash scripts/setup.sh
 ```
 
 The demo denies an unapproved write, reads the document, records a fixture

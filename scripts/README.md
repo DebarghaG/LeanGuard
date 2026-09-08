@@ -10,6 +10,7 @@ wheel. The supported enforcement interfaces are in `python/leanguard/`.
 | `LeanGuard/` | Formal policy DSL, evaluators, domain policies and proofs |
 | `scripts/verify.py` | Build, proof audit, lint, tests and native conformance gate |
 | `scripts/release.py`, `scripts/check_install.py` | Verified wheel/source candidates and installed-artifact checks |
+| `scripts/setup.sh` | Install pinned source dependencies, build the runtime, and run the demo |
 | `examples/custom_policy/` | Independent Lean package, safety contract, audit, and runtime/replay integration |
 | `skills/leanguard-policy/` | Optional portable policy-authoring skill |
 | `scripts/emit_schemas.py` | Generate schemas from trusted benchmark tool definitions |

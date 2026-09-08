@@ -1,5 +1,11 @@
 # LeanLTL integration
 
+LeanLTL is the work of Eric Vin, Kyle A. Miller, and Daniel J. Fremont:
+[LeanLTL: A Unifying Framework for Linear Temporal Logics in Lean](https://doi.org/10.4230/LIPIcs.ITP.2025.37),
+ITP 2025. The paper identifies the upstream
+[`vITP25` source release](https://github.com/UCSCFormalMethods/LeanLTL/releases/tag/vITP25)
+as its supplementary software. Our integration uses the pinned fork described below.
+
 LeanGuard's temporal language has a compositional interpretation in the pinned
 LeanLTL dependency. `Formula.toLeanLTL` uses the completed `TraceSet` library directly;
 it does not call LeanGuard's evaluator or its older `Holds` specification.
