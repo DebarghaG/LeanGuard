@@ -257,7 +257,7 @@ def compensation : Formula Check := check "compensation_eligibility_and_amount" 
   if amount != 10000 * n || !(← compensationEligible c) then return false
   Data.any (← array r "flights") fun f ↦ do return (← flightStatus c f) == "cancelled"
 
-def pack : PolicyPack := ⟨"airline", [
+def pack : PolicyPack := { name := "airline", rules := [
   permit "airline.tools" actions,
   schemaRule actions,
   require "airline.identity" ("get_user_details" :: "get_reservation_details" :: writes)
@@ -283,6 +283,6 @@ def pack : PolicyPack := ⟨"airline", [
     (source "airline" "add but not remove baggage; allowance"),
   require "airline.compensation" ["send_certificate"] compensation
     (source "airline" "requested compensation; eligibility, preceding action, exact amount")
-]⟩
+] }
 
 end LeanGuard.Domains.Airline

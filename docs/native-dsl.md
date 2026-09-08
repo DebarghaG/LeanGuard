@@ -145,8 +145,11 @@ negative control in the [conformance runner](../scripts/conformance.py).
 2. Add native `Schema` declarations and wrap the pack with `withSchemas`. Unknown
    tools remain default-denied. The schema subset supports primitives, enums, arrays,
    records with required/optional fields, and alternatives; validation has depth 64.
-3. Register the pack in `Runtime.packFor`, then rebuild the executable. A new binary
-   needs a deliberate journal migration; existing journals reject fingerprint changes.
+3. In your own Lake project, define `main := LeanGuard.serve pack`, importing
+   `LeanGuard.Server`. `serveVerified` additionally accepts the proof contract below.
+   The [complete example](../examples/custom_policy/lakefile.toml) uses a local
+   dependency; replace `path` with `git` and an immutable `rev` for independent use.
+   A new binary needs deliberate journal migration; journals reject fingerprint changes.
 4. Supply a trusted adapter: original arguments go to the tool, normalized arguments
    and facts go to Lean. Its lock must cover every backend writer, including user tools.
 5. Test allowed and denied traces, wrong principals/resources, stale approvals,
@@ -155,3 +158,63 @@ negative control in the [conformance runner](../scripts/conformance.py).
 The current JSON-backed contexts are an intentional boundary, not fully typed domain
 records. A future native record decoder can remove repeated field lookups and prove
 domain invariants; the existing evaluator correctness theorem remains reusable.
+
+## Proof contracts and downstream audits
+
+`VerifiedPolicy` contains `pack`, a `property` label, `Safe : Context → Prop`, and
+`sound : ∀ ctx, (decidePolicy pack ctx).allow = true → Safe ctx`. The label is
+descriptive metadata, not a certificate. The proof must establish the chosen
+property for the exact pack being served. Review that property and its assumptions;
+a vacuous proposition or an all-denying pack can still satisfy this type.
+
+The [document policy](../examples/custom_policy/Guard.lean) proves approval evidence,
+non-consumption, and dispatch reservation bounds. Its default
+[audit target](../examples/custom_policy/GuardAudit.lean) imports the executable and
+audits the pack, theorem and entry point, plus all declarations in the downstream
+and LeanGuard namespaces. `LeanGuard.Audit.check roots namespaces` rejects missing
+roots, empty namespaces, `sorryAx`, and all axioms except `propext`, `Classical.choice`,
+and `Quot.sound`, including dependencies outside the selected namespaces.
+
+Run the example from its own directory after installing the Python host:
+
+```sh
+cd examples/custom_policy
+lake update
+lake build
+../../.venv/bin/python run.py
+```
+
+Keep the audit among the downstream package's default build targets. `serve` remains
+available for exploratory packs; `serveVerified` links an explicit proof contract.
+Neither function performs proof search at runtime. Published binaries need the
+matching audited sources and build provenance. The native manifest exposes protocol
+version, rule IDs, schemas, schema depth limit and property labels; the Python engine
+adds the executable SHA-256. Proof audit results travel with release artifacts.
+
+## Recorded trace API
+
+`audit(engine, request, history)` accepts **prior events in chronological order**;
+the request is supplied separately. `replay(engine, events)` yields one `AuditResult`
+per request while preserving every recorded event. Both use the native `audit`
+operation without changing the engine's live history/version or dispatching tools.
+
+Each `TraceEvent` supplies `id`, integer-second `time`, `kind`, `principal`, `session`,
+`action`, `resource`, `binding`, and nonnegative integer `amount`. Requests additionally
+supply `input` (normalized arguments) and `facts` (the admission snapshot). Outcomes
+may carry `output`; historical input/fact units must follow the policy contract.
+`GuardHost.events()` exports this shape, including recorded dispatches. Equal
+timestamps preserve list order. Dataset-specific aliases and response pairing must
+be resolved by the importer; the public API does not guess them.
+
+The native `decision` is conditional on the supplied evidence. `assessment` is
+`allowed`, `denied`, or `insufficient_evidence`; decoding errors, missing request
+inputs/facts, `history_complete=False`, or explicit `missing_evidence` labels produce
+the last category. A record may carry a list of `missing_evidence` labels, retained
+conservatively through subsequent replay. This metadata reports evidence coverage;
+it is not a proved classifier of model misconduct or policy overrefusal. An importer
+must flag omissions that cannot be inferred from the trace itself.
+
+No confirmations, dispatches, or outcomes are synthesized. Recorded outcomes still
+advance history after a denied call, so later results describe the original history,
+not execution after enforcement. Journals contain private facts and consent data;
+apply access controls when exporting them.

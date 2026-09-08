@@ -1,0 +1,50 @@
+name: Release candidates
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: x86_64
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, audit, and test Linux wheels
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          docker run --rm -v "$PWD:/project" -w /project \
+            "quay.io/pypa/manylinux_2_34_${ARCHITECTURE}" bash -euxo pipefail -c '
+              git config --global --add safe.directory /project
+              curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+              export PATH="/root/.elan/bin:$PATH"
+              /opt/python/cp312-cp312/bin/python -m venv /tmp/release
+              /tmp/release/bin/pip install -e ".[test,mcp,release]"
+              export PATH="/tmp/release/bin:$PATH"
+              lake update
+              lake exe cache get
+              /tmp/release/bin/python scripts/release.py
+              /tmp/release/bin/auditwheel repair --wheel-dir wheelhouse dist/*.whl
+              /tmp/release/bin/twine check --strict wheelhouse/*.whl dist/leanguard-[0-9]*.tar.gz
+              /opt/python/cp312-cp312/bin/python -m venv /tmp/consumer
+              /tmp/consumer/bin/pip install wheelhouse/*.whl
+              cd /tmp
+              /tmp/consumer/bin/python /project/scripts/check_install.py
+              cd /project
+              lake pack "dist/LeanGuard-$(uname -m)-unknown-linux-gnu.tar.gz"
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: leanguard-linux-${{ matrix.architecture }}
+          path: |
+            wheelhouse/*
+            dist/*
+          if-no-files-found: error

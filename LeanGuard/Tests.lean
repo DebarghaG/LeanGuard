@@ -46,17 +46,17 @@ def large : Nat := 100000000000000000000000000000000000000000
 
 def failing : Formula Check := check "missing" fun _ ↦ .error "missing trusted field"
 def errorContext : Context := ⟨event "now" 100, .null, .null, [event "now" 100]⟩
-def errorPack : PolicyPack := ⟨"errors", [permit "error" ["read"] (.top ⋎ failing)]⟩
+def errorPack : PolicyPack := { name := "errors", rules := [permit "error" ["read"] (.top ⋎ failing)] }
 #guard !(decidePolicy errorPack errorContext).allow
-#guard !(decidePolicy ⟨"errors", [permit "negated_error" ["read"] (.neg failing)]⟩
+#guard !(decidePolicy { name := "errors", rules := [permit "negated_error" ["read"] (.neg failing)] }
   errorContext).allow
 
 def scopeSensitive : Formula Check := check "projected_error" fun c ↦
   if c.history.length == 2 then .error "missing scoped fact" else .ok false
 def scopeContext : Context := { errorContext with history :=
   [event "now" 100, { event "foreign" 95 with session := "other" }, event "old" 90] }
-#guard !(decidePolicy ⟨"errors", [permit "projected" ["read"]
-  (.neg (.within .conversation scopeSensitive))]⟩ scopeContext).allow
+#guard !(decidePolicy { name := "errors", rules := [permit "projected" ["read"]
+  (.neg (.within .conversation scopeSensitive))] } scopeContext).allow
 
 def timedApproval (now : Nat) : Context :=
   let request := { event "request" now with kind := "request", action := "write", binding := "b" }

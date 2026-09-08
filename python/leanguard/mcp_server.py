@@ -32,6 +32,17 @@ def build_server(host, approval=None):
             proposal = host.prepare(action, arguments)
             host.confirm(proposal.id, approval(proposal))
             proposal_id = proposal.id
-        return host.execute(action, arguments, proposal_id=proposal_id)
+        result = host.execute(action, arguments, proposal_id=proposal_id)
+        if not result["allow"]:
+            return {
+                "allow": False,
+                "request_id": result["request_id"],
+                "message": "Tool call denied by policy.",
+            }
+        return {
+            key: value
+            for key, value in result.items()
+            if key not in {"reasons", "errors", "evidence"}
+        }
 
     return server

@@ -1,10 +1,12 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "leanguard"
-version = "0.1.0"
+version = "0.2.0rc1"
+license = "MIT"
+license-files = ["LICENSE"]
 description = "Native Lean temporal policies with a durable Python enforcement host"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,6 +17,7 @@ Repository = "https://github.com/DebarghaG/LeanGuard"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.12"]
+release = ["build>=1.2", "twine>=6", "auditwheel>=6; sys_platform == 'linux'", "patchelf>=0.17; sys_platform == 'linux'"]
 mcp = ["mcp==2.2.0"]
 experiments = ["httpx>=0.28", "loguru>=0.7", "jsonschema>=4.20", "pyarrow>=21", "huggingface-hub>=0.34"]
 # Install the pinned tau2 checkout separately; see scripts/README.md.
@@ -25,6 +28,9 @@ leanguard = "leanguard.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["python"]
+
+[tool.setuptools.package-data]
+leanguard = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

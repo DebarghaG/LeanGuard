@@ -22,6 +22,8 @@ async def test_mcp_has_no_approval_or_observation_injection_tools(tmp_path):
                 "guarded_call", {"action": "write", "arguments": {"value": "bad"}}
             )
             assert not result.structured_content["allow"]
+            assert result.structured_content["message"] == "Tool call denied by policy."
+            assert not {"reasons", "errors", "evidence"} & result.structured_content.keys()
             assert adapter.calls == []
             await client.call_tool("guarded_call", {"action": "read", "arguments": {}})
             proposal = host.prepare("write", {"value": "good"})

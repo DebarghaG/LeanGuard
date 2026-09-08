@@ -37,14 +37,14 @@ def saleSchema : Schema := .object ["stock", "shares"]
   [("stock", .string), ("shares", .integer)]
 
 def sales (name : String) (condition : Formula Check) : PolicyPack := withSchemas
-  ⟨name, [permit "sale" ["SellShares"] condition,
-    permit "approval_tool" ["ApproveSale"]]⟩
+  { name := name, rules := [permit "sale" ["SellShares"] condition,
+    permit "approval_tool" ["ApproveSale"]] }
   [("SellShares", saleSchema), ("ApproveSale", saleSchema)]
 
 def transferPack (name : String) (condition : Formula Check) (key : String)
     (ty : Schema) : PolicyPack := withSchemas
-  ⟨name, [permit "base_transfer" ["Transfer"],
-    forbid "transfer_limit" ["Transfer"] condition "Dogwood article example"]⟩
+  { name := name, rules := [permit "base_transfer" ["Transfer"],
+    forbid "transfer_limit" ["Transfer"] condition "Dogwood article example"] }
   [("Transfer", .object [key] [(key, ty)])]
 
 def approval := sales "dogwood.approval" recentApproval
@@ -53,11 +53,11 @@ def requestCount := transferPack "dogwood.count" tooManyTransfers "amount" .inte
 def distinctRecipients := transferPack "dogwood.distinct" tooManyRecipients "user" .string
 def requestSum := transferPack "dogwood.sum" (excessiveTotal .requests) "amount" .integer
 def antiSpike := transferPack "dogwood.spike" spike "amount" .integer
-def confidentiality : PolicyPack := withSchemas ⟨"dogwood.confidential", [
+def confidentiality : PolicyPack := withSchemas { name := "dogwood.confidential", rules := [
   permit "base" ["ReadDocument", "ContactExternal"],
   forbid "no_contact_after_confidential_read" ["ContactExternal"] confidentialRead
     "Dogwood introduction: no external contact after confidential access"
-]⟩ [("ReadDocument", .object [] []), ("ContactExternal", .object [] [])]
+] } [("ReadDocument", .object [] []), ("ContactExternal", .object [] [])]
 
 /-- Deliberately unsafe response-only policy, used only by the offline conformance runner. -/
 def unsafeResponseSum :=

@@ -11,7 +11,13 @@ def main():
     parser = argparse.ArgumentParser(description="Native Lean agent guardrails")
     sub = parser.add_subparsers(dest="command", required=True)
     manifest = sub.add_parser("manifest")
-    manifest.add_argument("domain", choices=["example", "retail", "airline", "telecom"])
+    manifest.add_argument("domain")
+    manifest.add_argument("--binary", type=Path)
+    replay_parser = sub.add_parser("replay", help="Audit normalized chronological JSONL events")
+    replay_parser.add_argument("domain")
+    replay_parser.add_argument("events", type=Path)
+    replay_parser.add_argument("--binary", type=Path)
+    replay_parser.add_argument("--incomplete-history", action="store_true")
     sub.add_parser("demo")
     serve = sub.add_parser("mcp")
     serve.add_argument(
@@ -22,8 +28,15 @@ def main():
     serve.add_argument("--session", required=True)
     args = parser.parse_args()
     if args.command == "manifest":
-        with Engine(args.domain) as engine:
+        with Engine(args.domain, binary=args.binary) as engine:
             print(json.dumps(engine.manifest, indent=2))
+    elif args.command == "replay":
+        from .replay import replay
+
+        with Engine(args.domain, binary=args.binary) as engine, args.events.open() as stream:
+            events = (json.loads(line) for line in stream if line.strip())
+            for result in replay(engine, events, history_complete=not args.incomplete_history):
+                print(json.dumps(result))
     elif args.command == "demo":
         from .demo import MemoryTools
 

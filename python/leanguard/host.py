@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .engine import Engine, EngineError, canonical, digest
+from .types import CallResult, TraceEvent
 
 
 class ReadOnlyToolError(Exception):
@@ -34,6 +35,16 @@ class Adapter(Protocol):
 
     def snapshot(self, action: str, arguments: dict, customer: str) -> Snapshot: ...
     def execute(self, action: str, arguments: dict) -> Any: ...
+
+
+class IdentityAdapter(Adapter, Protocol):
+    """Optional trusted interpretation of backend identity evidence.
+
+    Events are chronological and already restricted to this principal/session.
+    Returning an identity is an integration assumption, not model-supplied consent.
+    """
+
+    def resolve_identity(self, events: list[TraceEvent]) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -146,7 +157,7 @@ class GuardHost:
             self._recover()
             raise
 
-    def events(self) -> list[dict]:
+    def events(self) -> list[TraceEvent]:
         with self._lock:
             rows = self.db.execute("SELECT command, response FROM journal ORDER BY seq").fetchall()
         events = []
@@ -168,19 +179,20 @@ class GuardHost:
         return events
 
     def customer(self) -> str:
-        lookups = {
-            "find_user_id_by_email",
-            "find_user_id_by_name_zip",
-            "get_customer_by_phone",
-            "get_customer_by_id",
-            "get_customer_by_name",
-        }
-        for event in self.events():
-            if event["session"] != self.session:
-                continue
-            if event["kind"] == "identity" or (
-                event["kind"] == "success" and event["action"] in lookups
-            ):
+        """Trusted subject identity; the historical name is kept for compatibility."""
+        events = [
+            event
+            for event in self.events()
+            if event["principal"] == self.principal and event["session"] == self.session
+        ]
+        resolver = getattr(self.adapter, "resolve_identity", None)
+        if resolver is not None:
+            identity = resolver(events)
+            if not isinstance(identity, str):
+                raise TypeError("identity resolver must return a string")
+            return identity
+        for event in events:
+            if event["kind"] == "identity":
                 return event["resource"]
         return ""
 
@@ -281,8 +293,9 @@ class GuardHost:
         *,
         proposal_id: str | None = None,
         request_id: str | None = None,
-    ) -> dict:
+    ) -> CallResult:
         arguments = json.loads(canonical(arguments))
+        request_id = request_id or uuid.uuid4().hex
         with self._lock, self.adapter.lock:
             snapshot = self.adapter.snapshot(action, arguments, self.customer())
             binding = ""
@@ -294,7 +307,13 @@ class GuardHost:
                     or proposal.revision != snapshot.revision
                     or proposal.resource != snapshot.resource
                 ):
-                    return {"allow": False, "reasons": ["stale_or_mismatched_confirmation"]}
+                    return {
+                        "allow": False,
+                        "reasons": ["stale_or_mismatched_confirmation"],
+                        "errors": [],
+                        "evidence": [],
+                        "request_id": request_id,
+                    }
                 binding = proposal.binding
             event = self._event(action, snapshot.resource, binding, snapshot.amount, id=request_id)
             event["input"] = snapshot.arguments
@@ -306,7 +325,7 @@ class GuardHost:
                     "facts": snapshot.facts,
                 }
             )
-            decision = response["decision"]
+            decision = {**response["decision"], "request_id": request_id}
             if not decision["allow"]:
                 return decision
             try:

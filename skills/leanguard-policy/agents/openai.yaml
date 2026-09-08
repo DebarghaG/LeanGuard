@@ -1,0 +1,4 @@
+interface:
+  display_name: "LeanGuard policy authoring"
+  short_description: "Build and prove runtime agent tool policies"
+  default_prompt: "Use $leanguard-policy to build and verify a custom runtime tool policy."

@@ -9,6 +9,9 @@ wheel. The supported enforcement interfaces are in `python/leanguard/`.
 | `python/leanguard/` | Native engine client, durable host, public adapter contract, CLI and optional integrations |
 | `LeanGuard/` | Formal policy DSL, evaluators, domain policies and proofs |
 | `scripts/verify.py` | Build, proof audit, lint, tests and native conformance gate |
+| `scripts/release.py`, `scripts/check_install.py` | Verified wheel/source candidates and installed-artifact checks |
+| `examples/custom_policy/` | Independent Lean package, safety contract, audit, and runtime/replay integration |
+| `skills/leanguard-policy/` | Optional portable policy-authoring skill |
 | `scripts/emit_schemas.py` | Generate schemas from trusted benchmark tool definitions |
 | `scripts/conformance.py` | Native evaluation of the documented Dogwood examples |
 | `scripts/experiments/` | Local model benchmarks, dataset ingestion, playback and scoring |
@@ -98,3 +101,59 @@ Historical artifacts retain their original commands and source hashes. Check out
 their recorded revision to reproduce that exact implementation; the layout change
 does not rewrite old experiment results. The over-refusal fixes before this move
 are preserved in commit `44196c6`.
+
+## Release candidates
+
+During dogfooding the package version is `0.2.0rc1` (Lean/Lake: `0.2.0-rc1`).
+The release builder rejects stable version strings. It builds local candidates and
+never uploads to PyPI, creates GitHub releases, or changes Git history.
+
+```sh
+.venv/bin/pip install -e '.[test,mcp,release]'
+.venv/bin/python scripts/release.py
+```
+
+Start from a reviewed, committed checkout. `--allow-dirty` is available for local
+packaging development and marks provenance accordingly. Output goes to ignored
+`dist/` by default. The builder runs the verification gate, then produces a Python
+source distribution, a platform wheel containing the native executable, and a
+portable skill archive. The wheel includes exact build/dependency revisions,
+executable/audit hashes, proof reports, and third-party license notices. The source
+distribution includes Lean sources and the downstream example; source installs still
+require a Lake build or an explicitly configured native executable.
+
+The manually triggered [candidate workflow](../.github/workflows/release.yml) builds
+on native Linux x86-64 and ARM64 runners inside manylinux containers, repairs/checks
+wheel compatibility, and tests installation outside the checkout without Lean on the
+runtime path. It also creates Lake build archives. Artifacts are candidates, with no
+automatic publication. macOS and Windows are not advertised as supported platforms.
+
+For a local wheel test, install the candidate into a fresh environment and run the
+check from a directory outside the repository:
+
+```sh
+python3.12 -m venv /tmp/leanguard-consumer
+/tmp/leanguard-consumer/bin/pip install /absolute/path/to/candidate.whl
+cd /tmp
+/tmp/leanguard-consumer/bin/python /absolute/path/to/LeanGuard/scripts/check_install.py
+```
+
+`LEANGUARD_BINARY` must be unset for this test. The check verifies the bundled binary,
+actual denial/admission effects, approval consumption via replay, and recovery. The
+candidate CI also runs the downstream source project and rejection tests for custom
+axioms/unfinished proofs through the ordinary gate.
+
+LeanGuard code, documentation, examples, and its skill use the root MIT license.
+Dependencies retain their own terms. The pinned LeanLTL fork and upstream currently
+lack a declared license: clarify redistribution permission before publishing binary
+candidates. Generated notices identify this gap rather than relicensing third-party
+code. After permission is established and candidates pass dogfooding, publish only
+explicitly reviewed artifacts; any initial GitHub release should be marked as a
+prerelease. PyPI release-candidate version strings remain prereleases.
+
+A policy author installs the skill by copying/extracting `leanguard-policy` into their
+coding agent's skill directory. Runtime consumers need only a compatible host and
+compiled policy. Lake authors can use a pinned Git dependency; attach the platform's
+`LeanGuard-<target>.tar.gz` archive to a matching GitHub prerelease to enable Lake's
+release-build cache. Cached builds are specific to the source/toolchain/platform;
+keep the audited sources available for independent rebuilding.

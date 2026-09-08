@@ -11,6 +11,18 @@ implemented examples and their assumptions.
 
 ## Run
 
+Platform wheels include the native executable and need only Linux and Python 3.12+:
+
+```sh
+python -m pip install /path/to/leanguard-VERSION-py3-none-PLATFORM.whl
+leanguard demo
+```
+
+Build candidates using the [release guide](scripts/README.md#release-candidates).
+This is `0.2.0rc1`, a release candidate for dogfooding. LeanGuard is MIT-licensed;
+public binary redistribution still needs LeanLTL licensing clarified.
+For development or building a custom policy from source:
+
 Requirements: Linux, Python 3.12, Git, and elan. The repository pins the Lean
 toolchain, LeanLTL fork, and mathlib dependencies.
 
@@ -31,9 +43,9 @@ user interface in an integration.
 
 ## Python integration
 
-The public library exports `Engine`, `EngineError`, `GuardHost`, `Adapter`,
-`Snapshot`, `Proposal`, and `ReadOnlyToolError`. The core has no third-party Python
-dependencies. MCP and the τ² adapter are optional integrations.
+The core exports `Engine`, `GuardHost`, `Adapter`, `Snapshot`, `Proposal`, typed
+`Decision`/`CallResult` results, and read-only `audit`/`replay` APIs. It has no
+third-party Python dependencies. MCP and the τ² adapter are optional integrations.
 
 Implement `Adapter.snapshot(action, arguments, customer)` and
 `Adapter.execute(action, arguments)` for your backend, with a shared `lock` that
@@ -59,11 +71,14 @@ for a certified read failure with no state change; other tool exceptions have an
 unknown outcome. MCP adapters additionally provide `tool_schemas()` and
 `mutating(action)`.
 
-The Python distributions contain the Python host; build the native executable from
-the corresponding Git checkout using the Lean steps above. When using the host outside
-an editable source checkout, supply `binary=Path(...)` to `Engine`/`GuardHost`, or
-set `LEANGUARD_BINARY` to the absolute path of the executable built by Lake. See
-[the guarantee boundary](docs/guarantees.md) before adapting a real backend.
+Platform wheels discover their bundled executable automatically. Source/editable
+installs use the checkout's Lake build. Custom policy executables can be selected
+with `binary=Path(...)` or `LEANGUARD_BINARY`. `CallResult` always includes `allow`,
+`request_id`, `reasons`, `errors`, and `evidence`; admitted calls additionally report
+their execution `outcome`. Host/transport errors raise exceptions; callers must not
+dispatch on those errors. Adapters may implement `IdentityAdapter.resolve_identity(events)`
+to interpret trusted identity evidence; the default uses explicit identity observations.
+See [the guarantee boundary](docs/guarantees.md) before adapting a backend.
 
 ## Native Lean DSL
 
@@ -71,18 +86,21 @@ set `LEANGUARD_BINARY` to the absolute path of the executable built by Lake. See
 import LeanGuard.Policy
 open LeanGuard
 
-def policy : PolicyPack := ⟨"documents", [
+def policy : PolicyPack := { name := "documents", rules := [
   permit "tools" ["read", "write"],
   require "read_first" ["write"] (observed ["read"]) "read this resource first",
   require "approval" ["write"] confirmed "matching, unrevoked, unused approval",
   require "budget" ["write"] (quota 10 10000 3600) "dispatch count and amount cap"
-]⟩
+] }
 ```
 
 `Formula`, `Check`, `Rule`, `Schema`, and `PolicyPack` are Lean types. Reusable policy
-constructs are Lean functions. Register new packs in `Runtime.packFor` and rebuild
-the executable; policy loading is a host capability. See
-[the compiled example](LeanGuard/Examples.lean) and [the DSL guide](docs/native-dsl.md).
+constructs are Lean functions. A separate Lake project can use `serve policy`, or
+`serveVerified verifiedPolicy` to associate admission with a proved safety contract.
+No registry edit is required. The [downstream example](examples/custom_policy/Guard.lean)
+includes a property theorem, audit target, executable, and Python integration.
+See the [DSL guide](docs/native-dsl.md#add-a-pack) and optional
+[policy-authoring skill](skills/leanguard-policy/SKILL.md).
 
 ## MCP
 
@@ -137,6 +155,20 @@ are absent. Ordinary pytest runs and the gate exclude tests marked `live`.
 See [the tooling guide](scripts/README.md) to enable the pinned τ² integration tests.
 
 ## Experiments
+
+For normalized saved events, the installed library supports read-only replay:
+
+```python
+from leanguard import Engine, replay
+
+with Engine("example") as engine:
+    for result in replay(engine, events):  # host.events(), oldest first
+        print(result["request_id"], result["assessment"])
+```
+
+`leanguard replay DOMAIN events.jsonl --binary /path/to/custom-engine` exposes the
+same API. Preserve recorded dispatches/outcomes and mark incomplete evidence; see
+the [trace contract](docs/native-dsl.md#recorded-trace-api).
 
 The [experiment guide](scripts/experiments/README.md) covers paired Qwen3.5-4B runs,
 saved-episode scoring, external rollout replay, and opt-in live protocol tests.

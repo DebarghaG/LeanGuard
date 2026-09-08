@@ -1,0 +1,10 @@
+include lakefile.toml lake-manifest.json lean-toolchain
+include *.lean
+recursive-include LeanGuard *.lean
+recursive-include docs *.md
+recursive-include examples *.lean *.toml *.py lean-toolchain
+recursive-include skills *.md *.yaml
+recursive-include scripts *.py *.md
+recursive-include tests *.py
+global-exclude *.pyc
+prune examples/custom_policy/.lake

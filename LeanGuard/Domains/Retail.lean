@@ -59,7 +59,7 @@ def validReturn : Formula Check := check "valid_return_and_refund" fun c ↦ do
     return (← str p "payment_method_id") == id && (← str p "transaction_type") == "payment"
   return original || (← isGift (← payment c id))
 
-def pack : PolicyPack := ⟨"retail", [
+def pack : PolicyPack := { name := "retail", rules := [
   permit "retail.tools" actions,
   schemaRule actions,
   require "retail.stable_identity" lookups stableLookup
@@ -92,6 +92,6 @@ def pack : PolicyPack := ⟨"retail", [
     (source "retail" "same product, available variant, sufficient payment"),
   require "retail.return" ["return_delivered_order_items"] validReturn
     (source "retail" "ordered items; original payment or existing gift card")
-]⟩
+] }
 
 end LeanGuard.Domains.Retail

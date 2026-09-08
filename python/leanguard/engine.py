@@ -26,6 +26,9 @@ def default_binary() -> Path:
     configured = os.environ.get("LEANGUARD_BINARY")
     if configured:
         return Path(configured).resolve()
+    bundled = Path(__file__).resolve().parent / "bin" / "leanguard"
+    if bundled.is_file():
+        return bundled
     return Path(__file__).resolve().parents[2] / ".lake" / "build" / "bin" / "leanguard"
 
 
@@ -34,7 +37,13 @@ class Engine:
 
     def __init__(self, domain: str, binary: Path | None = None, timeout: float = 10):
         self.binary = (binary or default_binary()).resolve()
-        self.fingerprint = hashlib.sha256(self.binary.read_bytes()).hexdigest()
+        try:
+            self.fingerprint = hashlib.sha256(self.binary.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise EngineError(
+                "Native executable unavailable; install a platform wheel, build with Lake, "
+                "or supply binary= / LEANGUARD_BINARY."
+            ) from exc
         self.timeout = timeout
         self._lock = threading.RLock()
         self._buffer = bytearray()
@@ -48,7 +57,7 @@ class Engine:
         try:
             os.set_blocking(self.process.stdin.fileno(), False)
             response = self.request({"op": "load", "domain": domain})
-            self.manifest = response["manifest"]
+            self.manifest = {**response["manifest"], "engine_sha256": self.fingerprint}
             self.version = response["version"]
         except BaseException:
             self.close()

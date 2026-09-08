@@ -1,4 +1,5 @@
 .lake/
+examples/custom_policy/lake-manifest.json
 .venv/
 __pycache__/
 *.pyc
@@ -12,6 +13,7 @@ __pycache__/
 *.sqlite*
 .tau2/
 dist/
+wheelhouse/
 build/
 runs/
 private/

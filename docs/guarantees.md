@@ -35,6 +35,11 @@
 
 The default `LeanGuardAudit` build target audits transitive axiom dependencies of
 all public LeanGuard declarations in the imported library and theorem regressions.
+Downstream packages can use `LeanGuard.Audit.check` with their own declaration roots
+and namespaces. `VerifiedPolicy.sound` connects a specific executable pack to its
+author's stated safety proposition; meaningful specification and adapter fidelity
+remain separate review obligations. The compiled server does not independently
+check a proof certificate for each request.
 The audit explicitly includes the live runtime and offline replay entry points.
 `Audit.lean` also lists exported safety theorems for `#print axioms`, and the
 verification script requires every report. Only Lean's standard `propext`,

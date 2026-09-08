@@ -119,6 +119,22 @@ def normalize(value, key=""):
 
 
 class TauAdapter:
+    @staticmethod
+    def resolve_identity(events):
+        lookups = {
+            "find_user_id_by_email",
+            "find_user_id_by_name_zip",
+            "get_customer_by_phone",
+            "get_customer_by_id",
+            "get_customer_by_name",
+        }
+        for event in events:
+            if event["kind"] == "identity" or (
+                event["kind"] == "success" and event["action"] in lookups
+            ):
+                return event["resource"]
+        return ""
+
     def __init__(self, domain: str, environment=None):
         if domain not in {"retail", "airline", "telecom"}:
             raise ValueError("unsupported text domain")

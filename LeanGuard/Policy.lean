@@ -20,6 +20,7 @@ abbrev Policy := Rule Check
 structure PolicyPack where
   name : String
   rules : List Policy
+  schemas : List (String × Json) := []
 
 namespace Data
 def field (j : Json) (key : String) : Except String Json :=
@@ -181,6 +182,7 @@ def PolicyPack.toLeanLTL (pack : PolicyPack) (ctx : Context) : LeanLTL.TraceSet 
     (LeanLTL.TraceSet.const (validationErrors pack ctx = []))
 
 def validatePack (pack : PolicyPack) : Except String Unit := do
+  if pack.name.isEmpty then throw "empty policy pack name"
   let ids := pack.rules.map Rule.id
   if ids.eraseDups.length != ids.length then throw "duplicate policy id"
   if pack.rules.isEmpty then throw "empty policy pack"

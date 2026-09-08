@@ -35,8 +35,9 @@ def main():
         unexpected = {name.strip() for name in group.split(",") if name.strip()} - standard
         if unexpected:
             raise RuntimeError(f"nonstandard proof axioms: {unexpected}")
-    run(sys.executable, "-m", "ruff", "check", "python", "tests", "scripts")
-    run(sys.executable, "-m", "ruff", "format", "--check", "python", "tests", "scripts")
+    sources = ("python", "tests", "scripts", "setup.py", "examples/custom_policy/run.py")
+    run(sys.executable, "-m", "ruff", "check", *sources)
+    run(sys.executable, "-m", "ruff", "format", "--check", *sources)
     run(sys.executable, "-m", "pytest", "-q", "-m", "not live")
     run(sys.executable, "-m", "scripts.conformance")
     from leanguard import Engine

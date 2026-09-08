@@ -103,7 +103,7 @@ def roaming : Formula Check := check "travelling_and_roaming_disabled" fun c ↦
     e.kind == "travelling" && e.resource == c.request.resource
   return travelling && !(← bool (← fact c "line") "roaming_enabled")
 
-def pack : PolicyPack := ⟨"telecom", [
+def pack : PolicyPack := { name := "telecom", rules := [
   permit "telecom.tools" actions,
   schemaRule actions,
   require "telecom.stable_identity" lookups stableLookup
@@ -131,6 +131,6 @@ def pack : PolicyPack := ⟨"telecom", [
     (source "telecom" "overdue bill or expired contract"),
   require "telecom.roaming" ["enable_roaming"] roaming
     (source "telecom" "travelling outside home network; check roaming status")
-]⟩
+] }
 
 end LeanGuard.Domains.Telecom
