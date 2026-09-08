@@ -104,7 +104,7 @@ are preserved in commit `44196c6`.
 
 ## Release candidates
 
-During dogfooding the package version is `0.2.0rc1` (Lean/Lake: `0.2.0-rc1`).
+During dogfooding the package version is `0.2.0rc2` (Lean/Lake: `0.2.0-rc2`).
 The release builder rejects stable version strings. It builds local candidates and
 never uploads to PyPI, creates GitHub releases, or changes Git history.
 
@@ -144,12 +144,9 @@ candidate CI also runs the downstream source project and rejection tests for cus
 axioms/unfinished proofs through the ordinary gate.
 
 LeanGuard code, documentation, examples, and its skill use the root MIT license.
-Dependencies retain their own terms. The pinned LeanLTL fork and upstream currently
-lack a declared license: clarify redistribution permission before publishing binary
-candidates. Generated notices identify this gap rather than relicensing third-party
-code. After permission is established and candidates pass dogfooding, publish only
-explicitly reviewed artifacts; any initial GitHub release should be marked as a
-prerelease. PyPI release-candidate version strings remain prereleases.
+Dependencies retain their own terms. Publish reviewed artifacts as GitHub
+prereleases during dogfooding. PyPI release-candidate version strings remain
+prereleases.
 
 A policy author installs the skill by copying/extracting `leanguard-policy` into their
 coding agent's skill directory. Runtime consumers need only a compatible host and

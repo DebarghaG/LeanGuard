@@ -24,3 +24,17 @@ jobs:
       - run: lake exe cache get
       - run: python -m pip install -e '.[test,mcp,experiments]' -e .tau2
       - run: python scripts/verify.py
+      - name: Check Dogwood guide proofs and adapters
+        run: |
+          mkdir -p examples/dogwood/.lake
+          ln -s "$GITHUB_WORKSPACE/.lake/packages" examples/dogwood/.lake/packages
+          (cd examples/dogwood && lake update && lake build)
+          python -m unittest discover -s examples/dogwood -p 'test_*.py' -v
+      - name: Compare all Dogwood guide examples
+        run: |
+          git clone https://github.com/dogwood-policy/dogwood "$RUNNER_TEMP/dogwood"
+          git -C "$RUNNER_TEMP/dogwood" checkout c6237c88099b3f492ecc5fcee42df06a19224b97
+          rustup toolchain install 1.98.1 --profile minimal
+          cargo +1.98.1 build --manifest-path "$RUNNER_TEMP/dogwood/Cargo.toml" -p amzn-dogwood-cli
+          python examples/dogwood/run.py --source "$RUNNER_TEMP/dogwood" \
+            --dogwood "$RUNNER_TEMP/dogwood/target/debug/dogwood"

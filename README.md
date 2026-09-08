@@ -11,17 +11,8 @@ implemented examples and their assumptions.
 
 ## Run
 
-Platform wheels include the native executable and need only Linux and Python 3.12+:
-
-```sh
-python -m pip install /path/to/leanguard-VERSION-py3-none-PLATFORM.whl
-leanguard demo
-```
-
-Build candidates using the [release guide](scripts/README.md#release-candidates).
-This is `0.2.0rc1`, a release candidate for dogfooding. LeanGuard is MIT-licensed;
-public binary redistribution still needs LeanLTL licensing clarified.
-For development or building a custom policy from source:
+This is `0.2.0rc2`, a source release candidate for dogfooding. LeanGuard's code,
+examples, documentation, and policy-authoring skill are MIT-licensed.
 
 Requirements: Linux, Python 3.12, Git, and elan. The repository pins the Lean
 toolchain, LeanLTL fork, and mathlib dependencies.
@@ -29,6 +20,7 @@ toolchain, LeanLTL fork, and mathlib dependencies.
 ```sh
 git clone https://github.com/DebarghaG/LeanGuard.git
 cd LeanGuard
+git checkout v0.2.0-rc2
 lake update
 lake exe cache get
 lake build
@@ -40,6 +32,10 @@ python3.12 -m venv .venv
 The demo denies an unapproved write, reads the document, records a fixture
 confirmation, and executes the approved write. Replace that fixture with a trusted
 user interface in an integration.
+
+The [release guide](scripts/README.md#release-candidates) also explains how to
+build platform wheels locally. Those wheels include the native executable and
+require only Linux and Python 3.12+ at runtime.
 
 ## Python integration
 
@@ -99,6 +95,8 @@ constructs are Lean functions. A separate Lake project can use `serve policy`, o
 `serveVerified verifiedPolicy` to associate admission with a proved safety contract.
 No registry edit is required. The [downstream example](examples/custom_policy/Guard.lean)
 includes a property theorem, audit target, executable, and Python integration.
+The [Dogwood guide encodings](examples/dogwood/README.md) exercise 86 external
+examples with a separate native registry and reproducible replay comparisons.
 See the [DSL guide](docs/native-dsl.md#add-a-pack) and optional
 [policy-authoring skill](skills/leanguard-policy/SKILL.md).
 

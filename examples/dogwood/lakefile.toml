@@ -1,0 +1,19 @@
+name = "DogwoodGuide"
+version = "0.2.0-rc2"
+license = "MIT"
+defaultTargets = ["Guide", "GuideAudit", "dogwood-guide"]
+
+[[require]]
+name = "LeanGuard"
+path = "../.."
+
+[[lean_lib]]
+name = "Guide"
+roots = ["Guide", "GuideMain"]
+
+[[lean_lib]]
+name = "GuideAudit"
+
+[[lean_exe]]
+name = "dogwood-guide"
+root = "GuideMain"

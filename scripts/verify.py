@@ -35,7 +35,7 @@ def main():
         unexpected = {name.strip() for name in group.split(",") if name.strip()} - standard
         if unexpected:
             raise RuntimeError(f"nonstandard proof axioms: {unexpected}")
-    sources = ("python", "tests", "scripts", "setup.py", "examples/custom_policy/run.py")
+    sources = ("python", "tests", "scripts", "setup.py", "examples")
     run(sys.executable, "-m", "ruff", "check", *sources)
     run(sys.executable, "-m", "ruff", "format", "--check", *sources)
     run(sys.executable, "-m", "pytest", "-q", "-m", "not live")
