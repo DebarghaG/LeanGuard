@@ -142,6 +142,11 @@ denial checkpoints, admission-recovery metrics, task scores, and reproducibility
 Local customer simulation and LLM judging are explicitly separated from the
 guarantees of the Lean policy engine.
 
+The [published trajectory replay](docs/external-rollouts.md) injects native policy
+checks into external Hugging Face rollouts without model calls or tool execution.
+It accounts for training prefixes, reports missing evidence and unsupported code
+tools separately, and exports every decision for native rechecking.
+
 ## Verification
 
 ```sh
