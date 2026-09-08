@@ -23,11 +23,15 @@ def main():
     run("lake", "build")
     audit = run("lake", "env", "lean", "Audit.lean", capture=True)
     print(audit.stdout, end="")
-    dependencies = re.findall(r"depends on axioms: \[([^\]]*)\]", audit.stdout)
-    if len(dependencies) < 17:
+    expected = re.findall(r"^#print axioms (\S+)$", (ROOT / "Audit.lean").read_text(), re.MULTILINE)
+    reports = re.findall(
+        r"'([^']+)' (?:depends on axioms: \[([^\]]*)\]|does not depend on any axioms)",
+        audit.stdout,
+    )
+    if len(reports) != len(expected) or {name for name, _ in reports} != set(expected):
         raise RuntimeError("incomplete proof audit")
     standard = {"propext", "Classical.choice", "Quot.sound"}
-    for group in dependencies:
+    for _, group in reports:
         unexpected = {name.strip() for name in group.split(",") if name.strip()} - standard
         if unexpected:
             raise RuntimeError(f"nonstandard proof axioms: {unexpected}")

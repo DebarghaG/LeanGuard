@@ -1,4 +1,4 @@
-import LeanGuard.Core
+import LeanGuard.Temporal
 import Lean.Data.Json
 
 namespace LeanGuard
@@ -171,6 +171,11 @@ theorem decision_no_errors (pack : PolicyPack) (ctx : Context)
     (h : (decidePolicy pack ctx).allow = true) : validationErrors pack ctx = [] := by
   simp only [decidePolicy, Bool.and_eq_true] at h
   simpa using h.2
+
+/-- The complete policy meaning in LeanLTL, including the fail-closed error gate. -/
+def PolicyPack.toLeanLTL (pack : PolicyPack) (ctx : Context) : LeanLTL.TraceSet History :=
+  (authorizationLeanLTL pack.rules (atomValue ctx) ctx.request.action).and
+    (LeanLTL.TraceSet.const (validationErrors pack ctx = []))
 
 def validatePack (pack : PolicyPack) : Except String Unit := do
   let ids := pack.rules.map Rule.id

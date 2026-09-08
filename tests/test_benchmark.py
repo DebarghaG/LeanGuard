@@ -12,8 +12,37 @@ from leanguard.benchmark import (
     generation_usage,
     local_endpoint,
     observe_customer,
+    select_tasks,
 )
 from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+
+
+@pytest.mark.parametrize(
+    "total,counts", [(100, [41, 18, 41]), (200, [82, 36, 82]), (278, [114, 50, 114])]
+)
+def test_proportional_task_sample_has_exact_size_and_no_replacement(total, counts):
+    tasks = {
+        domain: [SimpleNamespace(id=str(i)) for i in range(size)]
+        for domain, size in zip(["retail", "airline", "telecom"], [114, 50, 114])
+    }
+    selected = select_tasks(tasks, seed=300, total_tasks=total)
+    assert [len(sample) for sample in selected.values()] == counts
+    assert sum(map(len, selected.values())) == total
+    assert all(len({t.id for t in sample}) == len(sample) for sample in selected.values())
+    assert selected == select_tasks(tasks, seed=300, total_tasks=total)
+    assert selected == select_tasks(
+        {d: list(reversed(ts)) for d, ts in tasks.items()}, seed=300, total_tasks=total
+    )
+
+
+@pytest.mark.parametrize("total", [0, 3])
+def test_task_sample_rejects_unavailable_count(total):
+    with pytest.raises(ValueError, match="between 1 and 2"):
+        select_tasks(
+            {"retail": [SimpleNamespace(id="0"), SimpleNamespace(id="1")]},
+            seed=300,
+            total_tasks=total,
+        )
 
 
 @pytest.mark.parametrize("url", ["https://example.com/v1", "http://192.168.1.2:8000/v1"])

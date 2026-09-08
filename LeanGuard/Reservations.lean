@@ -1,4 +1,4 @@
-import LeanGuard.Policy
+import LeanGuard.PolicyProofs
 
 namespace LeanGuard
 
@@ -33,6 +33,31 @@ theorem confirmation_has_witness (c : Context)
   have holds := (evaluate_correct (atomValue c) confirmed c.history).mp accepted
   obtain ⟨i, mem, witness, _⟩ := holds.2.1
   exact ⟨i, mem, witness.2⟩
+
+theorem confirmation_leanLTL_witness (c : Context)
+    (accepted : evaluate (atomValue c) confirmed c.history = true) :
+    ∃ i ∈ List.range (projectAtHead .conversation c.history).tail.length,
+      historyTrace ((projectAtHead .conversation c.history).tail.drop i) ⊨
+        confirmedEvent.toLeanLTL (atomValue c) := by
+  obtain ⟨i, mem, witness⟩ := confirmation_has_witness c accepted
+  exact ⟨i, mem, (holds_iff_leanLTL _ _ _).mp witness⟩
+
+theorem confirmation_leanLTL_unconsumed (c : Context)
+    (accepted : evaluate (atomValue c) confirmed c.history = true) :
+    historyTrace (projectAtHead .conversation c.history).tail ⊨
+      ((Formula.once none usedConfirmation).toLeanLTL (atomValue c)).not := by
+  intro consumed
+  exact confirmation_not_consumed c accepted ((holds_iff_leanLTL _ _ _).mpr consumed)
+
+theorem confirmedWithin_leanLTL_recent_witness (c : Context) (seconds : Nat)
+    (accepted : evaluate (atomValue c) (confirmedWithin seconds) c.history = true) :
+    ∃ i ∈ List.range (projectAtHead .conversation c.history).length,
+      InPastWindow (some seconds) (projectAtHead .conversation c.history)
+        ((projectAtHead .conversation c.history).drop i) ∧
+      (historyTrace ((projectAtHead .conversation c.history).drop i) ⊨
+        confirmedEvent.toLeanLTL (atomValue c)) := by
+  obtain ⟨i, mem, window, witness⟩ := confirmedWithin_recent_witness c seconds accepted
+  exact ⟨i, mem, (inWindow_correct _ _ _).mp window, (holds_iff_leanLTL _ _ _).mp witness⟩
 
 theorem sumEvents_fold (h : History) (initial : Nat) :
     h.foldl (fun n e ↦ n + e.amount) initial =

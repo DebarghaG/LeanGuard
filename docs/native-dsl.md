@@ -65,6 +65,12 @@ is evaluated, so nesting `previous` and `once` changes the window's reference po
 Use `.once (some 3600)` with a `success` event predicate for “successful read within an
 hour of this request,” as in `Examples.recentlyRead`.
 
+Every constructor has a compositional LeanLTL interpretation via `Formula.toLeanLTL`.
+Import `LeanGuardProofs` for `evaluate_leanLTL_correct`, the verified decidability
+instance, and the admission, confirmation, query, and replay theorems. Policy
+properties can be stated directly as LeanLTL satisfaction or implication and
+transported to executable verdicts. See [the proof API](leanltl.md).
+
 Scopes are principal, conversation `(principal, session)`, or resource
 `(principal, resource)`. Project before `previous` or `since`: checking equal IDs only
 inside an atom would let interleaved foreign events change their meanings. These are

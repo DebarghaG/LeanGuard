@@ -77,6 +77,13 @@ theorem query_window (q : WindowQuery) (c : Context) (e : Event) (h : e ∈ q.ev
   simp only [WindowQuery.matches, Bool.and_eq_true, decide_eq_true_eq] at matched
   exact ⟨matched.1.2, matched.2⟩
 
+/-- A query witness at a LeanLTL state, with the query's request clock frozen. -/
+def WindowQuery.witnessLeanLTL (q : WindowQuery) (request e : Event) : LeanLTL.TraceSet History :=
+  (LeanLTL.TraceSet.of fun suffix ↦ suffix.head? = some e ∧
+    historyKey q.scope e = historyKey q.scope request ∧
+    e.action = q.action ∧ e.kind = q.basis.kind).and
+      (pastWindow (some q.seconds) [request])
+
 theorem distinct_membership [DecidableEq α] (values : List α) (value : α) :
     value ∈ distinctValues values ↔ value ∈ values := by
   exact List.mem_eraseDups

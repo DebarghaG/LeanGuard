@@ -1,6 +1,6 @@
 name = "LeanGuard"
 version = "0.1.0"
-defaultTargets = ["LeanGuard", "LeanGuardProofs", "leanguard", "leanguard-conformance"]
+defaultTargets = ["LeanGuard", "LeanGuardProofs", "LeanGuardAudit", "leanguard", "leanguard-conformance"]
 
 [[require]]
 name = "LeanLTL"
@@ -12,6 +12,9 @@ name = "LeanGuard"
 
 [[lean_lib]]
 name = "LeanGuardProofs"
+
+[[lean_lib]]
+name = "LeanGuardAudit"
 
 [[lean_exe]]
 name = "leanguard"

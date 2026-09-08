@@ -64,6 +64,27 @@ def write_json(path, value):
         stream.write("\n")
 
 
+def select_tasks(tasks_by_domain, *, seed, tasks_per_domain=10, total_tasks=None):
+    """Seeded sampling without replacement, optionally proportional across domains."""
+    sizes = {domain: len(tasks) for domain, tasks in tasks_by_domain.items()}
+    available = sum(sizes.values())
+    if total_tasks is None:
+        counts = {domain: min(tasks_per_domain, size) for domain, size in sizes.items()}
+    else:
+        if not 1 <= total_tasks <= available:
+            raise ValueError(f"total tasks must be between 1 and {available}")
+        counts = {domain: total_tasks * size // available for domain, size in sizes.items()}
+        remainder_order = sorted(
+            sizes, key=lambda domain: -(total_tasks * sizes[domain] % available)
+        )
+        for domain in remainder_order[: total_tasks - sum(counts.values())]:
+            counts[domain] += 1
+    return {
+        domain: random.Random(seed).sample(sorted(tasks, key=lambda t: t.id), counts[domain])
+        for domain, tasks in tasks_by_domain.items()
+    }
+
+
 def generation_usage(records):
     """Count every returned generation, including rejected/retried messages."""
     messages = [r["message"] for r in records]
@@ -652,7 +673,13 @@ def main():
         choices=["baseline", "generic", "guarded"],
         default=["baseline", "generic", "guarded"],
     )
-    parser.add_argument("--tasks-per-domain", type=int, default=10)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--tasks-per-domain", type=int, default=10)
+    selection.add_argument(
+        "--total-tasks",
+        type=int,
+        help="total distinct base tasks, allocated in proportion to domain sizes; each runs in every selected mode",
+    )
     parser.add_argument("--seed", type=int, default=300)
     parser.add_argument("--concurrency", type=int, default=12)
     parser.add_argument("--max-steps", type=int, default=240)
@@ -677,6 +704,7 @@ def main():
         )
         < 1
         or args.protocol_retries < 0
+        or (args.total_tasks is not None and args.total_tasks < 1)
     ):
         parser.error("counts and timeouts must be positive; retries must be nonnegative")
     logger.remove()
@@ -688,13 +716,23 @@ def main():
     ).strip()
     if revision != REVISION:
         raise ValueError("benchmark checkout does not match the policy adapter revision")
+    selected = select_tasks(
+        {domain: get_tasks(domain, task_split_name="base") for domain in args.domains},
+        seed=args.seed,
+        tasks_per_domain=args.tasks_per_domain,
+        total_tasks=args.total_tasks,
+    )
     if args.output.exists():
         raise FileExistsError("choose a new output directory; previous experiments are preserved")
     args.output.mkdir(parents=True)
     metadata = {
         **vars(args),
         "tau_revision": revision,
-        "selection": "seeded random sample of base split",
+        "selection": (
+            "seeded random sample of base split, proportional allocation across domains"
+            if args.total_tasks is not None
+            else "seeded random sample of base split"
+        ),
         "protocol": "bounded-retry-single-system-message",
         "agent_sampling": llm_args(
             args.endpoint,
@@ -745,8 +783,7 @@ def main():
     jobs = []
     metadata["task_ids"] = {}
     for domain in args.domains:
-        tasks = sorted(get_tasks(domain, task_split_name="base"), key=lambda t: t.id)
-        sample = random.Random(args.seed).sample(tasks, min(args.tasks_per_domain, len(tasks)))
+        sample = selected[domain]
         metadata["task_ids"][domain] = [t.id for t in sample]
         for index, task in enumerate(sample):
             for mode in args.modes:
@@ -767,6 +804,8 @@ def main():
                 task_directory = f"{index:03d}-{digest(task.id)[:12]}"
                 jobs.append((task, options, args.output / domain / mode / task_directory))
     jobs.sort(key=lambda job: (job[1]["sample_index"], args.domains.index(job[1]["domain"])))
+    metadata["selected_task_counts"] = {domain: len(tasks) for domain, tasks in selected.items()}
+    metadata["planned_episodes"] = len(jobs)
     metadata["task_digest"] = digest([t.model_dump(mode="json") for t, _, _ in jobs])
     write_json(args.output / "manifest.json", metadata)
     print(

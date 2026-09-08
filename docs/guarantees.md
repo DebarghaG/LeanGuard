@@ -5,23 +5,37 @@
 | Statement | What it establishes |
 |---|---|
 | `evaluate_correct` | Boolean temporal evaluation equals the separate `Holds` semantics |
+| `historyTrace_shift`, `inWindow_correct` | History suffixes match LeanLTL shifts; executable windows match independent metric predicates |
+| `holds_iff_leanLTL`, `evaluate_leanLTL_correct` | Every formula, including nested windows and scopes, agrees with its compositional LeanLTL interpretation |
+| `evaluate_eq_decide_leanLTL` | Native evaluation is a constructive decision procedure for the embedded LeanLTL formulas |
+| `authorize_leanLTL_correct`, `decision_leanLTL_correct` | Authorization and the actual admission decision equal their complete LeanLTL policy semantics |
+| `authorized_permit_leanLTL`, `decision_requirement_leanLTL`, `decision_no_forbid_leanLTL` | Admission has a permit witness and satisfies every applicable requirement and no forbid, in LeanLTL |
+| `evaluate_of_leanLTL_imp`, `evaluate_eq_of_leanLTL_eq`, `evaluate_once_disj` | LeanLTL implications and rewrites transfer to executable policy evaluation |
 | `project_membership`, `project_idempotent` | Explicit scope projection selects exactly matching keys and is stable |
 | `authorized_requirement`, `authorized_no_forbid` | Allow cannot bypass a mandatory rule or an applicable true forbid |
 | `decision_sound`, `decision_no_errors` | The actual decision's allow bit implies native authorization and an empty error list |
 | `confirmation_has_witness`, `confirmation_not_consumed` | The actual confirmation formula requires a prior matching witness and no matching prior dispatch |
 | `confirmedWithin_preserves`, `confirmedWithin_recent_witness` | Adding expiry preserves the one-use guard and requires an in-window confirmation witness |
 | `query_membership`, `query_window` | A query selects exactly its matching events, all within its inclusive non-future window |
+| `query_leanLTL_membership` | Query membership equals eventual satisfaction of its scoped, timed LeanLTL event predicate |
+| `confirmation_leanLTL_witness`, `confirmation_leanLTL_unconsumed`, `confirmedWithin_leanLTL_recent_witness` | Confirmation acceptance has prior LeanLTL evidence, no consumption, and the specified expiry window |
 | `distinct_membership`, `distinct_duplicate` | Deduplication preserves value membership and a duplicate value does not change the result |
 | `quota_reservation_bound` | Inserting the new dispatch after a successful quota check preserves its count and amount bounds |
 | `reservation_retained`, `deny_no_reservation` | The reservation operation adds a dispatch only on allow |
 | `replay_history` | Folding observations preserves the exact event sequence in newest-first form |
+| `replay_leanLTL_correct` | Evaluation after the monitor fold agrees with LeanLTL on the reversed observations |
 | `native_trace_safe` | Every context on a LeanLTL trace satisfies the per-decision implication |
+| `native_trace_leanLTL_safe` | Every admitted context on a LeanLTL trace satisfies its complete translated policy, including the error gate |
 | `cancellation_correct` | The executable airline cancellation predicate matches its stated eligibility proposition |
 | `external_cannot_override` | Optional external approval cannot override a native denial |
 
-`Audit.lean` lists exported safety theorems for `#print axioms`. Only Lean's standard
-`propext`, `Classical.choice`, and `Quot.sound` are accepted by the verification script.
-No `sorry` or custom axiom is needed in the implementation.
+The default `LeanGuardAudit` build target audits transitive axiom dependencies of
+all public LeanGuard declarations in the imported library and theorem regressions.
+`Audit.lean` also lists exported safety theorems for `#print axioms`, and the
+verification script requires every report. Only Lean's standard `propext`,
+`Classical.choice`, and `Quot.sound` are accepted. No `sorry`, `native_decide` axiom,
+or custom axiom is needed. The unfinished vendored `LTLfMT` module is not imported.
+See [the representation and correspondence details](leanltl.md).
 
 The generic authorization theorem is conditional on the predicates' meanings. Except
 for the separate cancellation statement, it does not independently prove that every

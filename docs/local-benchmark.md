@@ -54,9 +54,16 @@ The runner checks that checkout's revision; benchmark data is not committed here
 .venv/bin/python scripts/serve_qwen35.py \
   --name leanguard-qwen35-4b-parallel --max-num-seqs 16 --prefix-caching --print-command
 .venv/bin/python -m leanguard.benchmark \
-  --tasks-per-domain 10 --concurrency 12 \
-  --output runs/qwen35-4b-parallel-20260907
+  --total-tasks 100 --modes baseline generic --concurrency 12 \
+  --output runs/qwen35-4b-leanltl-generic-200-20260907
 ```
+
+This command runs 200 episodes: 100 distinct tasks, each with an unguarded baseline
+and LeanGuard returning only generic denial text. It allocates tasks proportionally
+across the complete base splits: 41 retail, 18 airline, and 41 telecom. Selection is
+seeded and without replacement. No actionable-feedback arm runs in this experiment.
+`--total-tasks` and `--tasks-per-domain` are mutually exclusive. To select all 278
+base tasks, use `--total-tasks 278`; with these two modes that gives 556 episodes.
 
 The endpoint can be supplied with `--endpoint`; non-local endpoints are rejected.
 The default is one trial on a fixed, seeded random sample of ten tasks per domain,
@@ -119,6 +126,25 @@ retries, including on failed episodes. Confirmation and judge usage are recorded
 separately. Transport or response-parsing failures may have consumed tokens without
 returning usable accounting. Seeds do not guarantee bitwise identical
 generation under different GPU batching schedules.
+
+After the report is complete, score every attempted episode and verify each saved
+native journal against the exact compiled LeanGuard binary used in the run:
+
+```sh
+.venv/bin/python -m leanguard.score_saved \
+  runs/qwen35-4b-leanltl-generic-200-20260907
+```
+
+This produces immutable JSON and CSV sidecars in `all-episode-scores/`. The scorer
+checks task contents, report coverage, per-episode artifacts, and the binary and
+benchmark fingerprints. It replays native commands without dispatching domain
+tools. Completed task rewards are checked again with the pinned upstream evaluator;
+premature terminations receive its zero reward. A failed live-state scoring check
+receives a conservative zero in the all-attempts result, with any upstream replay
+reward retained separately. Unstarted episodes remain explicitly unstarted.
+Deterministic rewards exclude natural-language assertions as in the live runner;
+the original local-model combined scores are retained separately. Neither measure
+is a proof of complete English-policy compliance.
 
 ## Guarded-mode interpretation
 

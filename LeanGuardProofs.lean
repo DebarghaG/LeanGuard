@@ -1,4 +1,5 @@
-import LeanGuard.Policy
+import LeanGuard.PolicyProofs
+import LeanGuard.QueryProofs
 import LeanGuard.Reservations
 import LeanLTL.TraceSet.Basic
 
@@ -36,5 +37,20 @@ theorem native_trace_safe (pack : PolicyPack) (t : LeanLTL.Trace Context) :
   intro violation
   obtain ⟨n, _, hn, bad⟩ := violation
   exact bad (native_decision_safe pack _)
+
+/-- Complete LeanLTL policy satisfaction at every admitted decision, including errors. -/
+def LeanLTLSafeDecision (pack : PolicyPack) (ctx : Context) : Prop :=
+  (decidePolicy pack ctx).allow = true →
+    (historyTrace ctx.history ⊨ pack.toLeanLTL ctx)
+
+theorem native_decision_leanLTL_safe (pack : PolicyPack) (ctx : Context) :
+    LeanLTLSafeDecision pack ctx := (decision_leanLTL_correct pack ctx).mp
+
+/-- Globally, actual admission implies the full translated temporal policy. -/
+theorem native_trace_leanLTL_safe (pack : PolicyPack) (t : LeanLTL.Trace Context) :
+    t ⊨ (LeanLTL.TraceSet.of (LeanLTLSafeDecision pack)).globally := by
+  rw [LeanLTL.TraceSet.globally_eq_globally, LeanLTL.TraceSet.sat_globally_iff]
+  intro i hi
+  exact native_decision_leanLTL_safe pack _
 
 end LeanGuard

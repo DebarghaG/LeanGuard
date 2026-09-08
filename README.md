@@ -113,11 +113,14 @@ reusing a journal. The guard's journal never re-executes recorded tool calls.
 
 ## Guarantees and limits
 
-Lean proves that the executable temporal evaluator agrees with its propositional
-semantics; admitted decisions satisfy every applicable mandatory rule and no forbid
-rule; accepted confirmation conditions have prior unused witnesses; and quota
-reservation preserves the checked bounds. `native_trace_safe` expresses per-decision
-safety globally over finite or infinite LeanLTL traces of contexts.
+Lean proves that every temporal formula's executable evaluation agrees with its
+compositional LeanLTL interpretation, including metric windows, scope projection,
+and empty histories. The complete admission decision is equivalent to its LeanLTL
+policy meaning, including permit existence, mandatory rules, forbids, and the error
+gate. Confirmation, query membership, and monitor replay also have LeanLTL
+correspondence theorems; quota reservation preserves the checked bounds.
+`native_trace_leanLTL_safe` expresses admission safety globally over finite or infinite
+traces of contexts. See [the LeanLTL integration and proof API](docs/leanltl.md).
 
 This is **not** a proof of the Python host, the benchmark tools, all English policy
 clauses, or a refinement from real-world actions to those traces. Authentic facts,
@@ -151,6 +154,9 @@ invalid calls that the
 underlying tool would accept, schema errors, approval reuse/revocation, concurrency,
 engine crashes, journal failures, replay corruption, and both MCP transports.
 The benchmark tests skip when the optional dependency is absent.
+
+The default `lake build` also checks the LeanLTL theorem regressions and rejects
+nonstandard transitive axiom dependencies across the public LeanGuard declarations.
 
 The v1 monitor retains complete histories and uses a direct reference evaluator.
 It is suitable for validating semantics and instrumented experiments, not a claim of
