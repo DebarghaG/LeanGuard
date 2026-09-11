@@ -53,10 +53,8 @@ structure DocumentTask where
   resources : List String
   approvedBinding : String
 
-/-- Check every admission and final task completion in the deterministic document fixture.
-This cannot remove any event from `past`. It can change only not-yet-executed calls.
-The premise that admitted reads/writes succeed is specific to this synthetic fixture. -/
-def documentPlanSafe (task : DocumentTask) (past : History)
+/-- The document fixture's transition loop, parameterized by the admission predicate. -/
+def documentPlanWith (admit : Context → Bool) (task : DocumentTask) (past : History)
     (calls : List DocumentCall) (index : Nat := 0) (done : Bool := false) : Bool :=
   match calls with
   | [] => done
@@ -72,8 +70,15 @@ def documentPlanSafe (task : DocumentTask) (past : History)
       (call.action == "read" || (call.action == "write" && call.resource == task.target &&
         call.value == task.value && call.binding == task.approvedBinding))
     let done := if call.action == "write" then true else done
-    intent && accepted "example" ctx && documentPlanSafe task
+    intent && admit ctx && documentPlanWith admit task
       ({ request with kind := "success" } :: { request with kind := "dispatch" } ::
         request :: past) rest (index + 1) done
+
+/-- Check every admission and final task completion in the deterministic document fixture.
+This cannot remove any event from `past`. It can change only not-yet-executed calls.
+The premise that admitted reads/writes succeed is specific to this synthetic fixture. -/
+def documentPlanSafe (task : DocumentTask) (past : History)
+    (calls : List DocumentCall) (index : Nat := 0) (done : Bool := false) : Bool :=
+  documentPlanWith (accepted "example") task past calls index done
 
 end LeanGuard.Experimental

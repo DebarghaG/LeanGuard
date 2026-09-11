@@ -6,7 +6,6 @@ using LeanGuard's existing public APIs. It does not add policies to the producti
 registry or implement a Dogwood language frontend.
 
 Source: [dogwood-policy/dogwood at c6237c8](https://github.com/dogwood-policy/dogwood/tree/c6237c88099b3f492ecc5fcee42df06a19224b97/dogwood-docs/examples).
-The website and checkout contained the same 86 example names on 2026-09-08.
 Upstream bundles remain in their Apache-2.0 checkout. Our native implementation,
 adapter and tests are covered by LeanGuard's MIT license.
 
@@ -59,9 +58,8 @@ examples it explicitly checks that the documented source limitation still holds.
 An interrupted report lacks the final `summary` field.
 
 The ignored `results.json` records source-file and binary SHA-256 hashes, a hash
-of each generated trace, decision counts, and every disagreement. The coverage
-table below is a compact record of the completed run. Temporary traces, upstream
-dependencies, binaries and raw reports are excluded from source distribution.
+of each generated trace, decision counts, and every disagreement. Temporary traces,
+upstream dependencies, binaries and raw reports are excluded from source distribution.
 
 ## Semantics that matter
 
@@ -135,102 +133,23 @@ Replay agreement is testing evidence for the manual ports, **not a proof of
 equivalence to Dogwood's Rust implementation**, truthful logs, or external
 provider results. No new production API or formal-policy relaxation was needed.
 
-## Completed coverage
+## Repair experiments
 
-The table is populated from the completed report after validation. `N` means
-native, `D` a data adapter and `P` a provider adapter. A dash means the source
-does not supply a trace. Clock rows use the independent oracle described above.
+[Repairs.lean](Repairs.lean) uses `guard_repair?` with complete LeanLTL policy goals.
+It shows a sale of 100 shares repaired to 99 when the task explicitly permits a
+smaller positive sale. If the task requires exactly 100, the same example proves
+that no permitted edit can pass. It also proves that the two forbid-only guide
+policies cannot admit any call, regardless of its arguments or history.
 
-Run on 2026-09-08: **192/192 published decisions matched** across 49 traces.
-The 6,670 generated decisions comprise **6,656/6,656 Dogwood comparisons**
-and **14/14 independent clock checks**. There were zero unexpected errors
-or disagreements. The 647-declaration axiom audit and nine adapter tests passed.
+Run from the repository root:
 
-| Example | Approach | Published decisions | Generated decisions | Result |
-| --- | :---: | ---: | ---: | --- |
-| `access_not_revoked_since_grant` | N | 4 | 40 | Matched |
-| `alert_exactly_three_transfers` | N | 8 | 22 | Matched |
-| `alert_heartbeat_and_login_rate` | N | 6 | 42 | Matched |
-| `alert_login_and_big_transfer` | N | — | 35 | Matched |
-| `alert_login_current_tp` | N | — | 16 | Matched |
-| `alert_login_in_last_hour` | N | 3 | 34 | Matched |
-| `alert_pending_transfers` | N | — | 20 | Matched |
-| `alert_same_principal_login_transfer` | N | — | 35 | Matched |
-| `alert_same_user_login_and_transfer` | N | 7 | 35 | Matched |
-| `alert_some_login` | N | 4 | 34 | Matched |
-| `alert_total_transfer_over_200` | N | 6 | 19 | Matched |
-| `allow_anything` | N | — | 136 | Matched |
-| `approve_has_output_guard` | D | — | 140 | Matched |
-| `call_cedar_macro_as_argument` | N | — | 136 | Matched |
-| `call_cedar_macro_is_small` | N | — | 136 | Matched |
-| `call_cedar_macro_with_temporal_leaf` | N | 5 | 34 | Matched |
-| `call_cedar_macros_composed` | N | — | 136 | Matched |
-| `call_temporal_aggregation_macro_count` | N | 5 | 34 | Matched |
-| `call_temporal_condition_macro_once` | N | 3 | 69 | Matched |
-| `call_temporal_condition_macros_composed` | N | 5 | 56 | Matched |
-| `cedar_eligible_not_blocked` | N | — | 136 | Matched |
-| `cedar_is_small_threshold` | N | — | 136 | Matched |
-| `cedar_macro_plus_temporal_leaf` | N | 4 | 34 | Matched |
-| `cedar_semver_gt` | N | — | 136 | Matched |
-| `cedar_starts_with_f_like` | N | — | 136 | Matched |
-| `cedar_within_cap_if_else` | N | — | 136 | Matched |
-| `cond_is_oauth_in_team` | D | — | 13 | Matched |
-| `deny_overrides_sell_not_amzn` | N | 3 | 136 | Matched |
-| `forbid_large_except_amzn` | N | 3 | 136 | Matched |
-| `forbid_read_transfers_over_1000` | N | 5 | 39 | Matched |
-| `get_amzn_stock_info` | N | 2 | 136 | Matched |
-| `heartbeat_scope_alias` | N | 3 | 58 | Matched |
-| `login_attempt_custom_kind` | D | 3 | 52 | Matched |
-| `macro_library_once_is_small` | N | 4 | 156 | Matched |
-| `max_window_raised` | N | — | 43 | Matched |
-| `permit_read_anyone` | N | 3 | 2 | Matched |
-| `principal_is_oauth` | D | — | 139 | Matched |
-| `provider_allowed_or_short` | P | 4 | 23 | Matched |
-| `provider_digitcount_forbid` | P | 4 | 23 | Matched |
-| `provider_digitcount_operator_ge` | P | 4 | 23 | Matched |
-| `provider_filter_set_index_decimal` | P | 3 | 23 | Matched |
-| `provider_int_arithmetic_trusted` | P | 4 | 25 | Matched |
-| `provider_matches_and_not_blocked` | P | 3 | 23 | Matched |
-| `provider_principal_id_allowlist` | P | 2 | 23 | Matched |
-| `provider_regex_analyze_fields` | P | 4 | 23 | Matched |
-| `provider_regex_matches_uppercase` | P | 3 | 23 | Matched |
-| `provider_risk_decimal_method` | P | 3 | 23 | Matched |
-| `read_after_login` | N | 3 | 14 | Matched |
-| `read_after_login_success` | N | 2 | 43 | Matched |
-| `read_heartbeat_since_login_30s` | N | 7 | 34 | Matched |
-| `read_login_not_logout` | N | 4 | 46 | Matched |
-| `read_prev_compute_open_session` | N | — | 39 | Matched |
-| `read_prev_login` | N | 3 | 50 | Matched |
-| `read_prev_login_success` | N | 3 | 43 | Matched |
-| `read_since_login` | N | 5 | 39 | Matched |
-| `sell_after_2024_datetime` | D | — | 7 | Clock oracle only |
-| `sell_after_approval_valid_ticker` | P | 5 | 148 | Matched |
-| `sell_comparison_chain` | N | — | 136 | Matched |
-| `sell_datetime_window` | D | — | 7 | Clock oracle only |
-| `sell_like_a_prefix` | N | 3 | 136 | Matched |
-| `sell_logical_grouping` | N | — | 136 | Matched |
-| `sell_nested_if_threshold` | N | — | 136 | Matched |
-| `sell_nonzero_proceeds_decimal` | D | — | 148 | Matched |
-| `sell_not_blocked_string` | N | — | 136 | Matched |
-| `sell_not_test_tickers_like` | N | — | 136 | Matched |
-| `sell_or_approve_action_in` | N | — | 136 | Matched |
-| `sell_shares_eq_scope` | N | — | 136 | Matched |
-| `sell_shares_temporal_subexpr` | N | 2 | 156 | Matched |
-| `sell_small_only` | N | 3 | 136 | Matched |
-| `sell_small_proceeds_decimal_method` | D | — | 148 | Matched |
-| `sell_threshold_by_stock` | N | 4 | 136 | Matched |
-| `sell_two_when_small_amzn` | N | — | 136 | Matched |
-| `sell_unless_huge` | N | — | 136 | Matched |
-| `sell_when_under_100` | N | — | 136 | Matched |
-| `sell_when_unless_mix` | N | — | 136 | Matched |
-| `sell_zero_proceeds_if_has` | D | — | 148 | Matched |
-| `simplest_permit` | N | — | 136 | Matched |
-| `submit_after_approval_injection` | N | 5 | 24 | Matched |
-| `temporal_count_formerly_login` | N | 3 | 34 | Matched |
-| `temporal_login_then_read` | N | 5 | 56 | Matched |
-| `temporal_once_read_recent` | N | 3 | 78 | Matched |
-| `temporal_sum_formerly_transfer` | N | 4 | 43 | Matched |
-| `traders_is_in_group_scope` | D | — | 13 | Matched |
-| `transfer_prev_nested_conj` | N | — | 30 | Matched |
-| `write_after_read` | N | 3 | 148 | Matched |
-| `write_after_read_formerly` | N | 5 | 69 | Matched |
+```sh
+lake build LeanGuard.Experimental.TemporalRepair
+(cd examples/dogwood && lake build && lake env lean Repairs.lean)
+```
+
+These contracts preserve the action and trusted evidence. A smaller transaction
+requires permission from the user; policy compliance alone does not establish
+that it fulfills their request. Missing approval, an expired grant, or a consumed
+budget may require new trusted events before retrying. A failed candidate search
+is not an impossibility proof. See the [repair guide](../repair/README.md).
