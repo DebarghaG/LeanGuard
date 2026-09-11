@@ -150,6 +150,10 @@ See [the tooling guide](scripts/README.md) to enable the pinned τ² integration
 
 ## Experiments
 
+The opt-in [Lean repair experiment](examples/repair/README.md) tries candidate tool-call
+edits with existing tactics, produces replayable proofs, and displays native denial
+reasons with policy descriptions. It runs offline against the existing policy evaluator.
+
 For normalized saved events, the installed library supports read-only replay:
 
 ```python
