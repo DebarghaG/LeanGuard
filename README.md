@@ -150,9 +150,12 @@ See [the tooling guide](scripts/README.md) to enable the pinned τ² integration
 
 ## Experiments
 
-The opt-in [Lean repair experiment](examples/repair/README.md) tries candidate tool-call
-edits with existing tactics, produces replayable proofs, and displays native denial
-reasons with policy descriptions. It runs offline against the existing policy evaluator.
+The opt-in [Lean repair experiment](examples/repair/README.md) proves candidate tool-call
+edits with a policy-specific grind solver, produces replayable proofs, and displays
+native denial reasons with policy descriptions. Register proved policy lemmas with
+`guard_rule` and use them through `guard_solve` or `guard_repair?`. It runs offline
+against the existing policy evaluator. The [implementation study](docs/grind.md)
+explains which grind components it reuses.
 
 For normalized saved events, the installed library supports read-only replay:
 

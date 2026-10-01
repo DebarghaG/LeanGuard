@@ -545,7 +545,7 @@ class RecordingEnvironment:
         return reply
 
 
-def run_episode(task, options, directory, stop_event=None):
+def run_episode(task, options, directory, stop_event=None, *, guard_factory=RecordingGuard):
     from tau2.orchestrator.orchestrator import Orchestrator
     from tau2.runner.build import build_environment, build_user
     from tau2.utils.llm_utils import set_llm_log_dir, set_llm_log_mode
@@ -605,7 +605,7 @@ def run_episode(task, options, directory, stop_event=None):
                 options["seed"],
                 context=lambda: confirmation_context(orchestrator.trajectory, host.events()),
             )
-            guarded = RecordingGuard(host, confirmation, detailed=options["mode"] == "guarded")
+            guarded = guard_factory(host, confirmation, detailed=options["mode"] == "guarded")
             active_environment = guarded
             observer = lambda reply: observe_customer(host, confirmation, reply)
         recording = RecordingEnvironment(active_environment, directory, stop_check=stop_check)
