@@ -19,6 +19,7 @@ Repository = "https://github.com/DebarghaG/LeanGuard"
 test = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.12"]
 release = ["build>=1.2", "twine>=6", "auditwheel>=6; sys_platform == 'linux'", "patchelf>=0.17; sys_platform == 'linux'"]
 mcp = ["mcp==2.2.0"]
+a2a = ["httpx>=0.28,<1"]
 experiments = ["httpx>=0.28", "loguru>=0.7", "jsonschema>=4.20", "pyarrow>=21", "huggingface-hub>=0.34"]
 # Install the pinned tau2 checkout separately; see scripts/README.md.
 tau = ["jsonschema>=4.20"]

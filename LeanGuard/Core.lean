@@ -24,18 +24,25 @@ structure Event where
   outputJson : String := "null"
   /-- Authoritative pre-dispatch snapshot, retained on the matching outcome. -/
   factsJson : String := "{}"
+  /-- Trusted workload identity and delegation scope; empty for legacy tool callers. -/
+  actor : String := ""
+  workflow : String := ""
+  delegation : String := ""
+  peer : String := ""
   deriving Repr, DecidableEq
 
 abbrev History := List Event
 
 inductive HistoryScope where
-  | principal | conversation | resource
+  | principal | conversation | resource | actor | workflow
   deriving Repr
 
 def historyKey : HistoryScope → Event → List String
   | .principal, e => [e.principal]
   | .conversation, e => [e.principal, e.session]
   | .resource, e => [e.principal, e.resource]
+  | .actor, e => [e.principal, e.actor]
+  | .workflow, e => [e.principal, e.workflow]
 
 def project (scope : HistoryScope) (anchor : Event) (h : History) : History :=
   h.filter (fun e ↦ historyKey scope e == historyKey scope anchor)

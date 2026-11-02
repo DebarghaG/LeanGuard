@@ -118,6 +118,20 @@ development harness: restarting it creates a new backend database, **not** a dur
 backend recovery. Integrations must restore the actual backend separately before
 reusing a journal. The guard's journal never re-executes recorded tool calls.
 
+## Multi-agent runtime and A2A
+
+`MultiAgentHost` extends the existing host with bound agent identities, attenuating
+delegations and shared ancestor budgets in one coordinator journal. Local tools
+retain their existing policy and approval checks. The optional A2A 1.0 HTTP+JSON
+client supports send, poll, cancel and streaming task updates, with explicit
+task/context ownership and replay protection.
+
+The [multi-agent guide](docs/multi-agent.md) explains the runtime trust boundary,
+API, supported protocol subset, and LeanLTL contracts. These include prior
+unrevoked grants, terminal-state safety on forward traces, and an explicit
+counterexample to unconditional eventual completion. Run the deterministic
+example with `.venv/bin/python examples/multiagent/run.py`.
+
 ## Guarantees and limits
 
 Lean proves that temporal evaluation and the complete admission decision agree with

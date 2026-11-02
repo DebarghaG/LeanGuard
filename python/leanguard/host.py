@@ -165,6 +165,34 @@ class GuardHost:
         for command, response in rows:
             command, response = json.loads(command), json.loads(response)
             event = dict(command["event"])
+            if command["op"] == "agents_grant":
+                grant = command["grant"]
+                event.update(
+                    actor=grant["actor"],
+                    workflow=grant["workflow"],
+                    delegation=grant["id"],
+                    resource=grant["id"],
+                    binding=grant["parent"],
+                    output=grant,
+                )
+            elif command["op"] == "agents_revoke":
+                grant = next(
+                    old["output"]
+                    for old in events
+                    if old["kind"] == "agent_grant" and old["resource"] == command["delegation"]
+                )
+                event.update(
+                    actor=grant["actor"],
+                    workflow=grant["workflow"],
+                    delegation=grant["id"],
+                    resource=grant["id"],
+                )
+            elif command["op"] in {"agents_update", "agents_stream_error", "agents_reconcile"}:
+                event["kind"] = {
+                    "agents_update": "task_update",
+                    "agents_stream_error": "stream_error",
+                    "agents_reconcile": "reconciled",
+                }[command["op"]]
             if command["op"] == "admit":
                 event["input"] = command["arguments"]
                 event["facts"] = command["facts"]
@@ -196,7 +224,17 @@ class GuardHost:
                 return event["resource"]
         return ""
 
-    def _event(self, action: str, resource: str, binding="", amount=0, kind="request", id=None):
+    def _event(
+        self,
+        action: str,
+        resource: str,
+        binding="",
+        amount=0,
+        kind="request",
+        id=None,
+        *,
+        scope=None,
+    ):
         now = self.clock()
         if type(now) is not int or now < 0:
             raise ValueError("clock must supply nonnegative integer seconds")
@@ -210,10 +248,14 @@ class GuardHost:
             "resource": resource,
             "binding": binding,
             "amount": amount,
+            **(scope or {}),
         }
 
     def prepare(self, action: str, arguments: dict) -> Proposal:
         """Produce canonical details for the trusted user confirmation surface."""
+        return self._prepare(action, arguments)
+
+    def _prepare(self, action: str, arguments: dict, *, scope=None) -> Proposal:
         arguments = json.loads(canonical(arguments))
         with self._lock, self.adapter.lock:
             snapshot = self.adapter.snapshot(action, arguments, self.customer())
@@ -231,6 +273,8 @@ class GuardHost:
                 "proposal": token,
                 "engine": self.engine.fingerprint,
             }
+            if scope:
+                details["scope"] = dict(scope)
             proposal = Proposal(
                 token,
                 action,
@@ -270,6 +314,7 @@ class GuardHost:
                 proposal.resource,
                 proposal.binding,
                 kind="confirmed" if accepted else "revoked",
+                scope=proposal.details.get("scope"),
             )
             self._record({"op": "observe", "event": event})
 
@@ -294,6 +339,17 @@ class GuardHost:
         proposal_id: str | None = None,
         request_id: str | None = None,
     ) -> CallResult:
+        return self._execute(action, arguments, proposal_id=proposal_id, request_id=request_id)
+
+    def _execute(
+        self,
+        action: str,
+        arguments: dict,
+        *,
+        proposal_id=None,
+        request_id=None,
+        scope=None,
+    ) -> CallResult:
         arguments = json.loads(canonical(arguments))
         request_id = request_id or uuid.uuid4().hex
         with self._lock, self.adapter.lock:
@@ -306,6 +362,7 @@ class GuardHost:
                     or proposal.arguments_json != canonical(arguments)
                     or proposal.revision != snapshot.revision
                     or proposal.resource != snapshot.resource
+                    or proposal.details.get("scope", {}) != (scope or {})
                 ):
                     return {
                         "allow": False,
@@ -315,7 +372,9 @@ class GuardHost:
                         "request_id": request_id,
                     }
                 binding = proposal.binding
-            event = self._event(action, snapshot.resource, binding, snapshot.amount, id=request_id)
+            event = self._event(
+                action, snapshot.resource, binding, snapshot.amount, id=request_id, scope=scope
+            )
             event["input"] = snapshot.arguments
             response = self._record(
                 {

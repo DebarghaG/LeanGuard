@@ -66,11 +66,14 @@ def samePrincipal (a b : Event) : Bool := a.principal == b.principal
 def sameConversation (a b : Event) : Bool := samePrincipal a b && a.session == b.session
 def sameResource (a b : Event) : Bool := samePrincipal a b && a.resource == b.resource
 
+def sameAuthority (a b : Event) : Bool := a.actor == b.actor && a.workflow == b.workflow &&
+  a.delegation == b.delegation && a.peer == b.peer
+
 def eventCheck (name : String) (p : Event → Event → Bool) : Formula Check :=
   check name fun c ↦ .ok (c.history.head?.any (p c.request))
 
 def confirmedEvent : Formula Check := eventCheck "matching_confirmation" fun r e ↦
-  sameConversation r e && e.kind == "confirmed" && e.action == r.action &&
+  sameConversation r e && sameAuthority r e && e.kind == "confirmed" && e.action == r.action &&
     e.resource == r.resource && e.binding == r.binding && r.binding != ""
 
 def revokedEvent : Formula Check := eventCheck "matching_revocation" fun r e ↦
@@ -91,7 +94,7 @@ def confirmedWithin (seconds : Nat) : Formula Check :=
 def observed (actions : List String) : Formula Check :=
   .within .conversation (.previous none (.once none
     (eventCheck "successful_resource_observation" fun r e ↦
-    sameResource r e && sameConversation r e && e.kind == "success" &&
+    sameResource r e && sameConversation r e && r.workflow == e.workflow && e.kind == "success" &&
       actions.contains e.action)))
 
 def neverDispatched (actions : List String) : Formula Check :=
@@ -115,7 +118,7 @@ def singleFlight : Formula Check := check "single_inflight_call" fun c ↦
   .ok (!(c.history.any fun e ↦
     (sameConversation c.request e || sameResource c.request e) && e.kind == "dispatch" &&
     !(c.history.any fun outcome ↦ outcome.id == e.id &&
-      (outcome.kind == "success" || outcome.kind == "failure"))))
+      (["success", "failure", "reconciled"].contains outcome.kind))))
 
 structure Decision where
   allow : Bool

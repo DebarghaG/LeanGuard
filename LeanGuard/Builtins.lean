@@ -3,11 +3,12 @@ import LeanGuard.Domains.Airline
 import LeanGuard.Domains.Telecom
 import LeanGuard.ToolSchemas
 import LeanGuard.DogwoodExamples
+import LeanGuard.A2A
 
 namespace LeanGuard
 open Lean Data
 
-def packFor : String → Except String PolicyPack
+def basePackFor : String → Except String PolicyPack
   | "retail" => .ok (withSchemas Domains.Retail.pack ToolSchemas.retail)
   | "airline" => .ok (withSchemas Domains.Airline.pack ToolSchemas.airline)
   | "telecom" => .ok (withSchemas Domains.Telecom.pack ToolSchemas.telecom)
@@ -21,5 +22,12 @@ def packFor : String → Except String PolicyPack
       ("write", .object ["value"] [("value", .string), ("resource", .string),
         ("amount", .integer)])])
   | name => DogwoodExamples.packFor name
+
+/-- Multi-agent domains opt in to the A2A operation surface at compile time. -/
+def packFor (name : String) : Except String PolicyPack := do
+  if let some base := name.dropPrefix? "multiagent." then
+    let pack ← basePackFor base.toString
+    return { A2A.withOperations pack with name := name }
+  basePackFor name
 
 end LeanGuard

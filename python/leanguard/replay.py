@@ -23,6 +23,12 @@ KINDS = {
     "travelling",
     "user_action",
     "user_observation",
+    "agent_enable",
+    "agent_grant",
+    "agent_revoke",
+    "task_update",
+    "stream_error",
+    "reconciled",
 }
 
 
