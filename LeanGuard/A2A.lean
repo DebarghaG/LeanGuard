@@ -42,7 +42,7 @@ def taskAccess (s : State) (e : Event) (args : Json) : Except String Unit := do
     -- A context alone cannot establish ownership of an existing conversation.
     if !context.isEmpty && !(s.contexts.any fun t ↦ t.peer == e.peer &&
         t.id == context && t.principal == e.principal && t.actor == e.actor &&
-        t.workflow == e.workflow && t.delegation == e.delegation) then
+        t.workflow == e.workflow && t.delegation == e.delegation && t.resource == e.resource) then
       throw "unknown or inaccessible context"
     return
   let some t := s.tasks.find? (fun t ↦ t.peer == e.peer && t.id == id)
@@ -106,7 +106,11 @@ def updateTask (s : State) (e : Event) (output : Json) : Except String State := 
     else str payload "contextId"
   let requestedContext ← str args "context_id"
   if !requestedContext.isEmpty && requestedContext != context then throw "response context mismatch"
-  let mut s := s
+  let id ← if message.isSome then pure "" else str payload (if task.isSome then "id" else "taskId")
+  if !message.isSome && (id.isEmpty || context.isEmpty) then throw "empty remote task identity"
+  if !requested.isEmpty && requested != id then throw "response task mismatch"
+  let target := if message.isSome then ResponseTarget.message context else .task id context
+  let mut s ← s.bindResponse e.id target
   if !context.isEmpty then
     if let some owner := s.contexts.find? (fun c ↦ c.peer == e.peer && c.id == context) then
       if owner.principal != e.principal || owner.actor != e.actor ||
@@ -116,9 +120,6 @@ def updateTask (s : State) (e : Event) (output : Json) : Except String State := 
       s := { s with contexts := ⟨e.principal, e.actor, e.workflow, e.delegation,
         e.peer, context, e.resource⟩ :: s.contexts }
   if message.isSome then return s
-  let id ← str payload (if task.isSome then "id" else "taskId")
-  if id.isEmpty || context.isEmpty then throw "empty remote task identity"
-  if !requested.isEmpty && requested != id then throw "response task mismatch"
   let old := s.tasks.find? (fun t ↦ t.peer == e.peer && t.id == id)
   if let some t := old then
     if t.principal != e.principal || t.actor != e.actor || t.workflow != e.workflow ||

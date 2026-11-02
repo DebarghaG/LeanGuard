@@ -24,6 +24,11 @@ coordinator lock. The existing file lock rejects competing journal writers.
 - Task phases are protocol-independent typed values. The A2A adapter normalizes
   wire states and scopes task/context ownership by peer, principal, actor,
   workflow, delegation and resource. `referenceTaskIds` is not an authority chain.
+  Context-only sends must match the context's resource before dispatch. Each
+  dispatch's first accepted receipt fixes its response kind, task and context;
+  subsequent receipts cannot substitute another target, even one owned by the
+  same agent. These native bindings survive journal replay and apply equally to
+  streamed updates and trusted reconciliation.
 
 The native module `MultiAgent.lean` contains authority, shared accounting and
 generic temporal grant contracts. `A2A.lean` contains wire normalization and A2A

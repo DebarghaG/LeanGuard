@@ -100,6 +100,12 @@ structure Conversation where
   resource : String
   deriving ToJson
 
+/-- An admitted operation's first accepted response fixes its target. -/
+inductive ResponseTarget where
+  | task (id context : String)
+  | message (context : String)
+  deriving DecidableEq, ToJson, Repr
+
 structure State where
   enabled : Bool := false
   grants : List Grant := []
@@ -107,6 +113,7 @@ structure State where
   revoked : List String := []
   tasks : List Task := []
   contexts : List Conversation := []
+  responses : List (String × ResponseTarget) := []
   deriving ToJson
 
 def State.grant (s : State) (id : String) : Except String Grant :=
@@ -116,6 +123,16 @@ def State.grant (s : State) (id : String) : Except String Grant :=
 
 def State.usage (s : State) (id : String) : Usage :=
   ((s.usages.find? (·.1 == id)).map Prod.snd).getD {}
+
+def State.response (s : State) (request : String) : Option ResponseTarget :=
+  (s.responses.find? (·.1 == request)).map Prod.snd
+
+def State.bindResponse (s : State) (request : String) (target : ResponseTarget) :
+    Except String State :=
+  match s.response request with
+  | none => .ok { s with responses := (request, target) :: s.responses }
+  | some established =>
+    if established = target then .ok s else .error "response target mismatch"
 
 /-- Fuel is bounded by the number of grants. Issue only permits existing parents. -/
 def lineage (s : State) : Nat → String → Except String (List Grant)

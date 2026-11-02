@@ -8,6 +8,7 @@ import pytest
 import test_a2a
 from leanguard import EngineError
 from leanguard.a2a import A2AClient, Peer, PeerFacts
+from leanguard.multiagent import Interaction
 from test_a2a import message, task
 
 setup = test_a2a.setup
@@ -115,6 +116,7 @@ async def test_duplicate_status_updates_do_not_consume_additional_budget(setup):
     assert len([r async for r in client.send_stream("remote", message())]) == 65
     usage = dict(host._status()["usages"])[agent.delegation]
     assert usage == {"calls": 1, "amount": 0}
+    assert len(host._status()["responses"]) == 1
 
 
 async def test_context_takeover_is_rejected_even_on_a_new_task(setup):
@@ -134,6 +136,204 @@ async def test_context_takeover_is_rejected_even_on_a_new_task(setup):
     other = A2AClient(stranger, {"remote": peer})
     assert (await other.send("remote", message(messageId="stranger")))["outcome"] == "unknown"
     assert len(host._status()["tasks"]) == 1
+
+
+@pytest.mark.parametrize("initial_payload", ["task", "message"])
+@pytest.mark.parametrize("resource", ["document", "other"])
+async def test_context_only_sends_require_the_original_resource(setup, initial_payload, resource):
+    host, _, transport, _, _ = setup
+    agent = host.grant(
+        "multi-resource",
+        workflow="multi-resource",
+        actions=["a2a.send"],
+        resources=["document", "other"],
+        peers=["remote"],
+        calls=10,
+        amount=100,
+        expires=1000,
+    )
+    current_resource = "document"
+    peer = Peer(transport, lambda operation, envelope: PeerFacts(current_resource, amount=10))
+    client = A2AClient(agent, {"remote": peer})
+    if initial_payload == "message":
+        transport.frames = [
+            {
+                "message": {
+                    "messageId": "reply",
+                    "role": "ROLE_AGENT",
+                    "parts": [],
+                    "contextId": "context-1",
+                }
+            }
+        ]
+    assert (await client.send("remote", message()))["outcome"] == "success"
+    usage = dict(host._status()["usages"])[agent.delegation]
+    current_resource = resource
+    result = await client.send("remote", message(messageId="followup", contextId="context-1"))
+    assert result["allow"] == (resource == "document")
+    assert len(transport.calls) == (2 if result["allow"] else 1)
+    if result["allow"]:
+        assert result["outcome"] == "success"
+    else:
+        assert dict(host._status()["usages"])[agent.delegation] == usage
+        # Exercise native admission directly, bypassing the Python client entirely.
+        event = host._event("a2a.send", resource, scope=agent._scope("remote"))
+        arguments = {
+            "peer": "remote",
+            "task_id": "",
+            "context_id": "context-1",
+            "payload": {"message": message(messageId="native", contextId="context-1")},
+        }
+        response = host._record(
+            {"op": "admit", "event": event, "arguments": arguments, "facts": {}}
+        )
+        assert not response["decision"]["allow"]
+        assert dict(host._status()["usages"])[agent.delegation] == usage
+
+
+def task_delta(kind, id, context):
+    payload = {"taskId": id, "contextId": context}
+    if kind == "statusUpdate":
+        payload["status"] = {"state": "TASK_STATE_COMPLETED"}
+    else:
+        payload["artifact"] = {"artifactId": "a", "parts": [{"text": "result"}]}
+    return {kind: payload}
+
+
+@pytest.mark.parametrize("kind", ["statusUpdate", "artifactUpdate"])
+@pytest.mark.parametrize("shared_context", [False, True])
+async def test_stream_cannot_update_another_owned_task(setup, kind, shared_context):
+    host, _, transport, client, _ = setup
+    transport.frames = [task(id="task-a", context="context-a")]
+    assert (await client.send("remote", message()))["outcome"] == "success"
+    context = "context-a" if shared_context else "context-b"
+    transport.frames = [
+        task(id="task-b", context=context),
+        task_delta(kind, "task-a", "context-a"),
+    ]
+    results = [r async for r in client.send_stream("remote", message(messageId="stream"))]
+    assert [r["outcome"] for r in results] == ["success", "unknown"]
+    assert client.task("remote", "task-a")["state"] == "working"
+    assert client.task("remote", "task-b")["state"] == "working"
+    assert host.events()[-1]["kind"] == "stream_error"
+
+
+@pytest.mark.parametrize(
+    "wrong_frame",
+    [
+        task("COMPLETED", id="task-a", context="context-a"),
+        task("COMPLETED", id="task-c", context="context-c"),
+        task_delta("statusUpdate", "task-a", "context-a"),
+        task_delta("artifactUpdate", "task-a", "context-a"),
+        {
+            "message": {
+                "messageId": "m",
+                "role": "ROLE_AGENT",
+                "parts": [],
+                "contextId": "context-b",
+            }
+        },
+    ],
+)
+@pytest.mark.parametrize("reconcile", [False, True])
+async def test_native_response_target_survives_recovery_and_cannot_be_substituted(
+    setup, wrong_frame, reconcile
+):
+    host, agent, transport, client, _ = setup
+    transport.frames = [task(id="task-a", context="context-a")]
+    assert (await client.send("remote", message()))["outcome"] == "success"
+    arguments = {
+        "peer": "remote",
+        "task_id": "",
+        "context_id": "",
+        "payload": {"message": message(messageId="native-stream")},
+    }
+    event, decision = host._begin_interaction(
+        agent, Interaction("a2a.send", "remote", "document", arguments, {})
+    )
+    assert decision["allow"]
+    try:
+        first = task(id="task-b", context="context-b")
+        host._update_interaction(event, first)
+        host._finish_interaction(event, first, unknown=reconcile)
+        if reconcile:
+            host._release_interaction(event)
+        with host._lock:
+            host._recover()
+
+        def receive(frame):
+            if reconcile:
+                host.reconcile(event["id"], frame)
+            else:
+                host._update_interaction(event, frame)
+
+        with pytest.raises(EngineError, match="response target mismatch"):
+            receive(wrong_frame)
+        assert client.task("remote", "task-a")["state"] == "working"
+        assert client.task("remote", "task-b")["state"] == "working"
+        with pytest.raises(ValueError, match="inaccessible"):
+            client.task("remote", "task-c")
+        receive(task_delta("statusUpdate", "task-b", "context-b"))
+        assert client.task("remote", "task-b")["state"] == "completed"
+        assert len(transport.calls) == 1
+    finally:
+        host._release_interaction(event)
+
+
+@pytest.mark.parametrize("context", ["", "context-1"])
+async def test_native_message_response_cannot_be_reinterpreted_as_a_task(setup, context):
+    host, agent, _, _, _ = setup
+    arguments = {
+        "peer": "remote",
+        "task_id": "",
+        "context_id": "",
+        "payload": {"message": message()},
+    }
+    event, decision = host._begin_interaction(
+        agent, Interaction("a2a.send", "remote", "document", arguments, {})
+    )
+    assert decision["allow"]
+    try:
+        reply = {"message": {"messageId": "m", "role": "ROLE_AGENT", "parts": []}}
+        if context:
+            reply["message"]["contextId"] = context
+        host._update_interaction(event, reply)
+        host._finish_interaction(event, reply)
+        with host._lock:
+            host._recover()
+        with pytest.raises(EngineError, match="response target mismatch"):
+            host._update_interaction(event, task(context=context or "context-1"))
+        assert host._status()["tasks"] == []
+    finally:
+        host._release_interaction(event)
+
+
+async def test_failed_first_receipt_write_does_not_leak_native_response_bindings(setup):
+    host, agent, _, client, _ = setup
+    arguments = {
+        "peer": "remote",
+        "task_id": "",
+        "context_id": "",
+        "payload": {"message": message()},
+    }
+    event, decision = host._begin_interaction(
+        agent, Interaction("a2a.send", "remote", "document", arguments, {})
+    )
+    assert decision["allow"]
+    try:
+        host.db.execute("""CREATE TEMP TRIGGER refuse BEFORE INSERT ON journal
+                        BEGIN SELECT RAISE(FAIL, 'injected receipt write failure'); END""")
+        with pytest.raises(sqlite3.IntegrityError):
+            host._update_interaction(event, task())
+        assert host._status()["responses"] == []
+        assert host._status()["tasks"] == []
+        host.db.execute("DROP TRIGGER refuse")
+        host._update_interaction(event, task())
+        host._finish_interaction(event, task())
+        assert client.task("remote", "task-1")["state"] == "working"
+        assert len(host._status()["responses"]) == 1
+    finally:
+        host._release_interaction(event)
 
 
 async def test_task_updates_after_revocation_remain_evidence_without_new_authority(setup):

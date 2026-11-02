@@ -53,6 +53,7 @@ import LeanGuard.Query
 #print axioms LeanGuard.MultiAgent.activeGrant_witness
 #print axioms LeanGuard.MultiAgent.admission_ancestor_witness
 #print axioms LeanGuard.MultiAgent.terminal_absorbing
+#print axioms LeanGuard.MultiAgent.response_binding_immutable
 #print axioms LeanGuard.MultiAgent.withinGrant_correct
 #print axioms LeanGuard.MultiAgent.admissible_correct
 #print axioms LeanGuard.MultiAgent.authorize_correct

@@ -3,6 +3,13 @@ import LeanGuard.PolicyProofs
 
 namespace LeanGuard.MultiAgent
 
+theorem response_binding_immutable (s next : State) (request : String)
+    (established target : ResponseTarget) (bound : s.response request = some established)
+    (accepted : s.bindResponse request target = .ok next) : target = established := by
+  by_cases same : established = target
+  · exact same.symm
+  · simp [State.bindResponse, bound, same] at accepted
+
 /-- Full multi-agent meaning, including the original error gate, the temporal
 contracts and successful ledger authorization. No new temporal evaluator. -/
 def admissionLeanLTL (pack : PolicyPack) (c : Context)
