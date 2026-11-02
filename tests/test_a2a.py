@@ -260,6 +260,102 @@ async def test_http_rest_binding_and_sse_use_actual_wire_bytes():
         assert await transport.request("a2a.get", {"id": "task-1"}) == task()
         assert [r async for r in transport.stream("a2a.send", {"message": message()})] == [task()]
     assert requests[1].method == "GET" and requests[1].url.path == "/tasks/task-1"
+    assert requests[2].method == "POST" and requests[2].url.path == "/message:stream"
+    assert json.loads(requests[2].content) == {"message": message()}
+
+
+async def test_http_task_subscription_uses_get_without_request_body():
+    httpx = pytest.importorskip("httpx")
+    requests = []
+
+    def serve(request):
+        requests.append(request)
+        if request.method != "GET":
+            return httpx.Response(405)
+        if request.content:
+            return httpx.Response(400)
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            text="data: " + json.dumps(task()) + "\n\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
+        transport = A2AHTTPTransport("https://agent.example", client=http)
+        assert [r async for r in transport.stream("a2a.subscribe", {"id": "task/1"})] == [task()]
+    assert len(requests) == 1
+    assert requests[0].url.raw_path == b"/tasks/task%2F1:subscribe"
+    assert requests[0].headers["accept"] == "text/event-stream"
+
+
+@pytest.mark.parametrize("operation", ["a2a.send", "a2a.subscribe"])
+@pytest.mark.parametrize("line_end", [b"\n", b"\r\n", b"\r"])
+@pytest.mark.parametrize("fragmented", [False, True])
+async def test_http_stream_delivers_small_frames_before_reading_more(
+    operation, line_end, fragmented
+):
+    httpx = pytest.importorskip("httpx")
+    wire = line_end.join(
+        [
+            b'\xef\xbb\xbfdata: {"task":',
+            b"data: " + json.dumps(task()["task"]).encode() + b"}",
+            b"",
+            b"",
+        ]
+    )
+
+    class LiveStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            chunks = [wire[i : i + 1] for i in range(len(wire))] if fragmented else [wire]
+            for chunk in chunks:
+                yield chunk
+            raise httpx.ReadTimeout("idle after a complete task frame")
+
+    def serve(request):
+        return httpx.Response(
+            200, headers={"Content-Type": "text/event-stream"}, stream=LiveStream()
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
+        transport = A2AHTTPTransport("https://agent.example", client=http)
+        payload = {"message": message()} if operation == "a2a.send" else {"id": "task-1"}
+        frames = transport.stream(operation, payload)
+        try:
+            assert await anext(frames) == task()
+            with pytest.raises(httpx.ReadTimeout):
+                await anext(frames)
+        finally:
+            await frames.aclose()
+
+
+async def test_http_stream_records_task_evidence_before_idle_timeout(setup):
+    httpx = pytest.importorskip("httpx")
+    host, agent, _, _, peer = setup
+
+    class LiveStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"data: " + json.dumps(task()).encode() + b"\n\n"
+            raise httpx.ReadTimeout("idle after a complete task frame")
+
+    def serve(request):
+        return httpx.Response(
+            200, headers={"Content-Type": "text/event-stream"}, stream=LiveStream()
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
+        transport = A2AHTTPTransport("https://agent.example", client=http)
+        client = A2AClient(agent, {"remote": Peer(transport, peer.profile)})
+        results = client.send_stream("remote", message())
+        try:
+            assert (await anext(results))["outcome"] == "success"
+            assert client.task("remote", "task-1")["state"] == "working"
+            assert (await anext(results))["outcome"] == "unknown"
+            with pytest.raises(StopAsyncIteration):
+                await anext(results)
+        finally:
+            await results.aclose()
+    assert client.task("remote", "task-1")["state"] == "working"
+    assert host.events()[-1]["kind"] == "stream_error"
 
 
 def test_transport_rejects_insecure_or_credential_bearing_endpoints():

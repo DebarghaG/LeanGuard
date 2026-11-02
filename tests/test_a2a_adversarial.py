@@ -333,6 +333,7 @@ async def test_sse_accepts_multiline_data_keepalives_and_all_line_endings(line_e
         b'data: {"task":{}}',
         b'data: {"task":{}}\n',
         b":" + b"x" * (8 * 1024 * 1024 + 1),
+        b":" + b"x" * (8 * 1024 * 1024 + 1) + b"\n\n",
     ],
 )
 async def test_sse_rejects_duplicate_json_fields_incomplete_frames_and_oversized_comments(wire):

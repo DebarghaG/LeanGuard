@@ -118,9 +118,9 @@ class A2AHTTPTransport:
 
     async def stream(self, operation, payload):
         if operation == "a2a.send":
-            path, body = "/message:stream", payload
+            method, path, body = "POST", "/message:stream", payload
         elif operation == "a2a.subscribe":
-            path, body = f"/tasks/{self._task_id(payload['id'])}:subscribe", {}
+            method, path, body = "GET", f"/tasks/{self._task_id(payload['id'])}:subscribe", None
         else:
             raise ValueError("unsupported streaming operation")
         headers = {
@@ -129,9 +129,9 @@ class A2AHTTPTransport:
             "Content-Type": "application/a2a+json",
         }
         async with self.client.stream(
-            "POST",
+            method,
             self.endpoint + path,
-            content=canonical(body),
+            content=None if body is None else canonical(body),
             headers=headers,
             follow_redirects=False,
         ) as response:
@@ -156,12 +156,17 @@ class A2AHTTPTransport:
     async def _sse_lines(response):
         # Bound a line before decoding it; a malicious unbroken line/comment
         # must not bypass the frame limit. SSE permits LF, CRLF and CR.
-        pending, first = bytearray(), True
-        async for chunk in response.aiter_bytes(chunk_size=65536):
+        pending, first, skip_lf = bytearray(), True, False
+        # Consume available bytes immediately; fixed-size chunks buffer live events.
+        async for chunk in response.aiter_bytes():
+            if skip_lf:
+                chunk, skip_lf = chunk.removeprefix(b"\n"), False
             pending.extend(chunk)
             while match := re.search(rb"\r\n|\r|\n", pending):
-                if match.end() == len(pending) and pending[-1] == 13:
-                    break  # CRLF may straddle chunks.
+                if match.start() > 8 * 1024 * 1024:
+                    raise ValueError("A2A stream line exceeds 8 MiB")
+                # CR ends a line immediately. Swallow a later LF if CRLF was split.
+                skip_lf = match.group() == b"\r" and match.end() == len(pending)
                 line = bytes(pending[: match.start()])
                 del pending[: match.end()]
                 if first:
@@ -169,9 +174,7 @@ class A2AHTTPTransport:
                 yield line
             if len(pending) > 8 * 1024 * 1024:
                 raise ValueError("A2A stream line exceeds 8 MiB")
-        if pending.endswith(b"\r"):
-            yield bytes(pending[:-1])
-        elif pending:
+        if pending:
             raise ValueError("incomplete A2A stream line")
 
     async def aclose(self):
