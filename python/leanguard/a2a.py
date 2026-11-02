@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -29,10 +29,20 @@ def _unique_object(pairs):
     return result
 
 
+class A2AStream(Protocol):
+    """An owned response iterator whose cleanup must be awaited."""
+
+    def __aiter__(self) -> A2AStream: ...
+
+    async def __anext__(self) -> dict: ...
+
+    async def aclose(self) -> None: ...
+
+
 class A2ATransport(Protocol):
     async def request(self, operation: str, payload: dict) -> dict: ...
 
-    def stream(self, operation: str, payload: dict) -> AsyncIterator[dict]: ...
+    def stream(self, operation: str, payload: dict) -> A2AStream: ...
 
 
 @dataclass(frozen=True)
@@ -299,7 +309,7 @@ class A2AClient:
     async def cancel(self, peer: str, task_id: str) -> CallResult:
         return await self._call(peer, "a2a.cancel", {"id": task_id}, task_id)
 
-    def send_stream(self, peer: str, message: dict) -> AsyncIterator[CallResult]:
+    def send_stream(self, peer: str, message: dict) -> AsyncGenerator[CallResult, None]:
         message = self._message(message)
         return self._stream(
             peer,
@@ -309,10 +319,12 @@ class A2AClient:
             message.get("contextId", ""),
         )
 
-    def subscribe(self, peer: str, task_id: str) -> AsyncIterator[CallResult]:
+    def subscribe(self, peer: str, task_id: str) -> AsyncGenerator[CallResult, None]:
         return self._stream(peer, "a2a.subscribe", {"id": task_id}, task_id)
 
-    async def _stream(self, peer, operation, payload, task_id="", context_id=""):
+    async def _stream(
+        self, peer, operation, payload, task_id="", context_id=""
+    ) -> AsyncGenerator[CallResult, None]:
         configured, event, decision, wire = self._begin(
             peer, operation, payload, task_id, context_id
         )
@@ -320,8 +332,18 @@ class A2AClient:
             yield decision
             return
         settled, first, message_only = False, True, False
+        stream = None
+
+        async def close_stream():
+            nonlocal stream
+            # Transfer ownership before awaiting so cleanup failures are not retried.
+            owned, stream = stream, None
+            if owned is not None:
+                await owned.aclose()
+
         try:
-            async for frame in configured.transport.stream(operation, wire):
+            stream = configured.transport.stream(operation, wire)
+            async for frame in stream:
                 if first:
                     if not isinstance(frame, dict) or not ({"task", "message"} & frame.keys()):
                         raise ValueError("A2A stream must begin with a Task or Message")
@@ -347,7 +369,11 @@ class A2AClient:
                 )
             if not isinstance(exc, Exception):
                 raise
+            await close_stream()
             yield {**decision, "outcome": "unknown", "error": type(exc).__name__}
 
         finally:
-            self.agent._host._release_interaction(event)
+            try:
+                await close_stream()
+            finally:
+                self.agent._host._release_interaction(event)

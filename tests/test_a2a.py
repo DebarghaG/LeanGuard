@@ -234,6 +234,173 @@ async def test_network_wait_does_not_hold_host_lock_and_close_is_fenced(setup):
     assert (await running)["outcome"] == "success"
 
 
+@pytest.mark.parametrize("operation", ["send", "subscribe"])
+@pytest.mark.parametrize("exit_reason", ["close", "invalid_first", "invalid_next"])
+async def test_guarded_http_stream_closes_response_before_releasing_host(
+    setup, operation, exit_reason
+):
+    httpx = pytest.importorskip("httpx")
+    host, agent, _, original, peer = setup
+    if operation == "subscribe":
+        assert (await original.send("remote", message()))["outcome"] == "success"
+    frames = [{}] if exit_reason == "invalid_first" else [task()]
+    if exit_reason == "invalid_next":
+        frames.append({})
+    close_fences, retained = [], []
+
+    class Body(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            yield b"".join(b"data: " + json.dumps(frame).encode() + b"\n\n" for frame in frames)
+            await asyncio.Event().wait()
+
+        async def aclose(self):
+            close_fences.append(bool(host._pending_interactions))
+            await asyncio.sleep(0)
+            self.closed = True
+
+    body = Body()
+
+    def serve(request):
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=body)
+
+    class RetainedHTTPTransport(A2AHTTPTransport):
+        def stream(self, operation, payload):
+            stream = super().stream(operation, payload)
+            retained.append(stream)  # Keep finalization from masking missing awaited cleanup.
+            return stream
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
+        transport = RetainedHTTPTransport("https://agent.example", client=http)
+        client = A2AClient(agent, {"remote": Peer(transport, peer.profile)})
+        results = (
+            client.send_stream("remote", message())
+            if operation == "send"
+            else client.subscribe("remote", "task-1")
+        )
+        try:
+            first = await anext(results)
+            assert first["outcome"] == ("unknown" if exit_reason == "invalid_first" else "success")
+            if exit_reason == "invalid_next":
+                assert (await anext(results))["outcome"] == "unknown"
+            elif exit_reason == "close":
+                await results.aclose()
+            # Error results also arrive only after their HTTP response has closed.
+            assert body.closed
+            assert close_fences == [True]
+        finally:
+            await results.aclose()
+            for stream in retained:
+                await stream.aclose()
+    assert not host._pending_interactions
+
+
+@pytest.mark.parametrize("exit_reason", ["close", "invalid", "exhaust", "cancel"])
+async def test_stream_close_fence_waits_for_transport_cleanup(setup, exit_reason):
+    host, _, transport, client, _ = setup
+    closing, release, reading = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class Stream:
+        emitted, closed, close_calls = False, False, 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self.emitted:
+                self.emitted = True
+                return task()
+            if exit_reason == "invalid":
+                return {}
+            if exit_reason == "exhaust":
+                raise StopAsyncIteration
+            reading.set()
+            await asyncio.Event().wait()
+
+        async def aclose(self):
+            self.close_calls += 1
+            closing.set()
+            await release.wait()
+            self.closed = True
+
+    stream = Stream()
+    transport.stream = lambda operation, payload: stream
+    results = client.send_stream("remote", message())
+    running = None
+    try:
+        assert (await anext(results))["outcome"] == "success"
+        running = asyncio.create_task(
+            results.aclose() if exit_reason == "close" else anext(results)
+        )
+        if exit_reason == "cancel":
+            await asyncio.wait_for(reading.wait(), timeout=1)
+            running.cancel()
+        await asyncio.wait_for(closing.wait(), timeout=1)
+        assert not running.done()
+        assert host._pending_interactions
+        with pytest.raises(RuntimeError, match="active A2A"):
+            host.close()
+        release.set()
+        if exit_reason == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await running
+        elif exit_reason == "invalid":
+            assert (await running)["outcome"] == "unknown"
+            await results.aclose()
+        elif exit_reason == "exhaust":
+            with pytest.raises(StopAsyncIteration):
+                await running
+        else:
+            await running
+        assert stream.closed and stream.close_calls == 1
+        assert not host._pending_interactions
+        assert client.task("remote", "task-1")["state"] == "working"
+    finally:
+        release.set()
+        if running is not None:
+            await asyncio.gather(running, return_exceptions=True)
+        await results.aclose()
+        if not stream.closed:
+            await stream.aclose()
+
+
+@pytest.mark.parametrize("exit_reason", ["close", "invalid"])
+async def test_transport_cleanup_failure_is_raised_once_and_releases_fence(setup, exit_reason):
+    host, _, transport, client, _ = setup
+
+    class Stream:
+        emitted, close_calls = False, 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            frame = {} if self.emitted else task()
+            self.emitted = True
+            return frame
+
+        async def aclose(self):
+            self.close_calls += 1
+            raise RuntimeError("transport cleanup failed")
+
+    stream = Stream()
+    transport.stream = lambda operation, payload: stream
+    results = client.send_stream("remote", message())
+    try:
+        assert (await anext(results))["outcome"] == "success"
+        with pytest.raises(RuntimeError, match="transport cleanup failed"):
+            if exit_reason == "close":
+                await results.aclose()
+            else:
+                await anext(results)
+        assert stream.close_calls == 1
+        assert not host._pending_interactions
+        assert host.events()[-1]["kind"] == "stream_error"
+    finally:
+        await results.aclose()
+
+
 async def test_http_rest_binding_and_sse_use_actual_wire_bytes():
     httpx = pytest.importorskip("httpx")
     requests = []

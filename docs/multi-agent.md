@@ -139,6 +139,13 @@ A2A server, Agent Card discovery, push notifications, or other transport binding
 The replaceable `A2ATransport` interface accommodates those integrations without
 changing the authority model or temporal semantics.
 
+`A2ATransport.stream` returns an owned `A2AStream` iterator with an asynchronous
+`aclose` method; an async generator implements that contract. The client awaits
+transport cleanup before releasing the coordinator's close fence, including on
+validation failure and cancellation. Callers that stop consuming `send_stream`
+or `subscribe` early must await the returned generator's `aclose()` (or use
+`contextlib.aclosing`).
+
 `outcome="success"` means the protocol operation returned successfully. The
 remote task may still be `working`; `client.task(peer, task_id)` returns its last
 reported phase. Cancellation does not imply rollback. Revocation prevents new
