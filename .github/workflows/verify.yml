@@ -22,7 +22,7 @@ jobs:
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - run: lake update
       - run: lake exe cache get
-      - run: python -m pip install -e '.[test,mcp,experiments]' -e .tau2
+      - run: python -m pip install -e '.[test,mcp,a2a-grpc,experiments]' -e .tau2
       - run: python scripts/verify.py
       - name: Check Dogwood guide proofs and adapters
         run: |

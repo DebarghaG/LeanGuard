@@ -165,16 +165,23 @@ where the charge comes from: it must validate the structured domain effects and
 derive the amount itself, without relying on anything the remote side says in
 free text. The profile cannot
 rewrite the admitted message. Credentials belong in the host-configured HTTP
-client. Peer IDs must name canonical, authenticated endpoints, since routing
-aliases for the same peer would otherwise get separate authority and replay
-namespaces.
+client or gRPC channel. Peer IDs must name canonical, authenticated endpoints,
+since routing aliases for the same peer would otherwise get separate authority
+and replay namespaces.
 
-The bundled transport implements the A2A 1.0 HTTP+JSON client subset: Send
-Message, Get Task, Cancel Task, Send Streaming Message and Subscribe to Task, for
-both direct Messages and stateful Tasks. It has no A2A server, Agent Card
-discovery, push notifications or other transport bindings. Those can be added
-behind the replaceable `A2ATransport` interface without touching the authority
-model or the temporal semantics.
+Two transports are bundled, and both implement the same A2A 1.0 client subset:
+Send Message, Get Task, Cancel Task, Send Streaming Message and Subscribe to
+Task, for both direct Messages and stateful Tasks. `A2AHTTPTransport` speaks the
+HTTP+JSON binding and needs `.[a2a]`. `A2AGRPCTransport` speaks the gRPC binding
+and needs `.[a2a-grpc]`; it takes a `host:port` target, uses TLS unless the
+target is loopback and `insecure=True`, never retries, caps each response at
+8 MiB, puts a deadline on unary calls but none on streams, and converts
+protobuf responses into the same JSON shapes the HTTP transport returns, so the
+client validates both identically. The generated stubs live in
+`leanguard.a2a_grpc` and are rebuilt by `scripts/gen_a2a_grpc.py`. Neither
+transport provides an A2A server, Agent Card discovery or push notifications.
+Those can be added behind the replaceable `A2ATransport` interface without
+touching the authority model or the temporal semantics.
 
 `A2ATransport.stream` returns an `A2AStream` iterator that the caller owns and that
 has an asynchronous `aclose` method; an async generator meets that contract. The
