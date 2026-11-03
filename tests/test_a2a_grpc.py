@@ -224,8 +224,25 @@ async def test_grpc_caller_owned_channel_is_left_open(peer):
             pass
         async with A2AGRPCTransport(channel=channel) as transport:
             assert await transport.request("a2a.get", {"id": "task-1"}) == task()
+        for kwargs in [{"target": target}, {"insecure": True}, {"credentials": object()}]:
+            with pytest.raises(ValueError):
+                A2AGRPCTransport(channel=channel, **kwargs)
     finally:
         await channel.close()
+
+
+async def test_grpc_stream_close_waits_for_the_call_to_settle(peer):
+    servicer, target = peer
+    servicer.hold = True
+    async with A2AGRPCTransport(target, insecure=True) as transport:
+        stream = transport.stream("a2a.subscribe", {"id": "task-1"})
+        assert await stream.__anext__() == task()
+        await stream.aclose()
+        assert stream._call.done()
+        assert await stream._call.code() == grpc.StatusCode.CANCELLED
+        await stream.aclose()  # idempotent, like the HTTP transport's generator
+        with pytest.raises(StopAsyncIteration):
+            await stream.__anext__()
 
 
 async def test_grpc_metadata_is_sent_from_mappings_and_pairs(peer):

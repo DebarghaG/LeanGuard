@@ -216,21 +216,31 @@ class _GRPCStream:
     async def __anext__(self):
         import grpc
 
+        if self._call.cancelled():
+            # A locally cancelled call raises CancelledError from read(); a
+            # closed stream should end quietly, like a closed async generator.
+            raise StopAsyncIteration
         response = await self._call.read()
         if response is grpc.aio.EOF:
             raise StopAsyncIteration
         return self._frame(response)
 
     async def aclose(self):
+        # Cancel, then wait for the call to settle so no work is left running once
+        # the client releases its close fence. `code()` never raises.
         self._call.cancel()
+        await self._call.code()
 
 
 class A2AGRPCTransport:
     """Transport for the A2A 1.0 gRPC binding.
 
     `target` is a `host:port` pair. Channels use TLS; pass `credentials` for mTLS
-    or a private root, or pass your own `channel` and keep ownership of it.
-    Plain-text channels are allowed for loopback targets only. Retries are off,
+    or a private root. Plain-text channels are allowed for loopback targets only.
+    Alternatively pass your own `channel`, on its own: it is trusted host
+    configuration, like the HTTP transport's client, so its target, credentials
+    and options are yours to get right, and this class cannot check them. Retries
+    are off on channels it creates,
     so Send Message is never retried automatically. Responses are capped at 8 MiB
     per message. Unary calls get a deadline; streams get none, since a
     subscription may stay open for a long time. `metadata` is sent with every
@@ -258,6 +268,8 @@ class A2AGRPCTransport:
         pairs = metadata.items() if isinstance(metadata, Mapping) else metadata or ()
         self.metadata = tuple((str(key), value) for key, value in pairs) or None
         self._owns_channel = channel is None
+        if channel is not None and (target is not None or credentials is not None or insecure):
+            raise ValueError("pass either a channel or target/credentials/insecure, not both")
         if channel is None:
             if target is None:
                 raise ValueError("A2A gRPC transport requires a target or a channel")
