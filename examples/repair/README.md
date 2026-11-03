@@ -1,8 +1,8 @@
 # Suggesting repairs with Lean
 
 When LeanGuard denies a call, an agent often wants to know whether a slightly
-different call would go through. Maybe a smaller amount, maybe a different payload.
-`guard_repair?` answers that question for a list of candidate edits you supply. It
+different call would go through, for example with a smaller amount or a different
+payload. `guard_repair?` answers that question for a list of candidate edits you supply. It
 picks the first candidate it can prove both allowed by the policy and acceptable to
 the user, and prints the Lean proof so it can be reused.
 
@@ -36,8 +36,7 @@ theorem budget_repair : ∃ amount : Nat, 0 < amount ∧ amount ≤ 70 ∧
 trusted facts and past events stay as they were.
 
 List candidates in order of preference, since the first one proved wins, and supply
-at most 32 of them. If none can be proved, that tells you about those candidates
-only; a different candidate might still work. If the user needs an exact amount,
+at most 32 of them. If the user needs an exact amount,
 write `amount = 70` into the goal instead of allowing a reduction.
 
 The default discharger, `guard_solve`, starts with the cheap options. It looks for a
@@ -99,8 +98,7 @@ the types and values of local declarations it uses.
 
 When a candidate fails, its failed obligation or discharger error is kept. Turn on
 `set_option trace.guard.repair true` to see failed attempts even when a later
-candidate succeeds. These diagnostics explain why a proof didn't go through; they
-don't show that the candidate is forbidden.
+candidate succeeds.
 
 [How the repair experiment uses grind](../../docs/grind.md) covers the engine's
 architecture, exactly which parts are reused, version differences, and where
@@ -125,8 +123,8 @@ rewrites those arguments, validate the new call and check admission again.
 
 Repair can only change the call. Trusted identity, facts, approval evidence and
 history stay fixed, and a missing observation or approval has to come from the
-host's trusted flows. The proof covers the intent restrictions you wrote in the
-goal and nothing more.
+host's trusted flows. The proof covers only the intent restrictions written in the
+goal.
 
 ## Use LeanLTL policy goals
 
@@ -150,9 +148,7 @@ exactly the ones the native allow decision accepts. Prefer it to a single tempor
 condition, which would leave out the policy's other requirements.
 
 A repair proof is about the history you gave it. Later events can revoke an approval
-or use up a budget, so check admission again before acting on an old proof. LeanGuard's
-traces run toward the past, so these goals say nothing about whether a task will
-eventually finish. The [LeanLTL guide](../../docs/leanltl.md) explains the semantics.
+or use up a budget, so check admission again before acting on an old proof. The [LeanLTL guide](../../docs/leanltl.md) explains the semantics.
 
 The [temporal examples](TemporalStress.lean) cover ordering, windows, scope,
 revocation and proof reuse:

@@ -117,10 +117,9 @@ oracle through upstream finite-LTL semantics. Integration tests cover native
 dispatch, all 64 phase transitions, malformed responses, scope substitution,
 replay, concurrent shared budgets, revocation, storage failure and recovery.
 
-These contracts are about the formal inputs and the transitions the runtime
-enforces. Python, transport authentication, extracting declared effects from free
-text, backend fidelity, and a full refinement of distributed execution are outside
-them.
+These contracts cover the formal inputs and the transitions the runtime enforces.
+The Python code, transport authentication, extracting effects from free text, and
+the backend's behaviour are assumed.
 
 ## Usage
 
@@ -163,8 +162,8 @@ Install `.[a2a]` and construct `A2AClient(agent, {peer_id: Peer(...)})` in trust
 runtime code. Each `Peer` has a transport and a profile that returns
 `PeerFacts(resource, amount, facts)` for the exact message envelope. The profile is
 where the charge comes from: it must validate the structured domain effects and
-derive the amount itself, because a free-text promise to stay under a spending
-limit tells you nothing about what the remote side will do. The profile cannot
+derive the amount itself, without relying on anything the remote side says in
+free text. The profile cannot
 rewrite the admitted message. Credentials belong in the host-configured HTTP
 client. Peer IDs must name canonical, authenticated endpoints, since routing
 aliases for the same peer would otherwise get separate authority and replay

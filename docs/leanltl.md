@@ -1,12 +1,11 @@
 # LeanLTL integration
 
-LeanGuard's temporal operators are only useful if they mean what their names say.
-To pin that down, every native formula is translated into
+Every native LeanGuard formula is translated into
 [LeanLTL](https://doi.org/10.4230/LIPIcs.ITP.2025.37), a Lean library for linear
 temporal logics by Eric Vin, Kyle A. Miller and Daniel J. Fremont (ITP 2025), and
 the executable evaluator is proved to agree with that translation on every
-history. Policy authors get the payoff: you can prove properties of a policy
-using LeanLTL's theorems and carry the results over to the runtime verdict.
+history. This lets you prove properties of a policy with LeanLTL's theorems and
+carry the results over to the runtime verdict.
 
 The paper's supplementary software is the upstream
 [`vITP25` release](https://github.com/UCSCFormalMethods/LeanLTL/releases/tag/vITP25).
@@ -113,8 +112,7 @@ any admitted call.
 Several theorems connect these results to the runtime and to the guards:
 
 - `native_trace_leanLTL_safe` states the complete policy guarantee globally, over
-  finite or infinite traces of decision contexts. It is a safety implication; it
-  does not decide arbitrary infinite-trace properties or promise liveness.
+  finite or infinite traces of decision contexts, as a safety implication.
 - `replay_leanLTL_correct` relates the executable monitor fold to evaluation on the
   reversed sequence of observations.
 - The confirmation theorems expose a prior LeanLTL witness, non-consumption, and
@@ -139,7 +137,5 @@ compiler-trusting axiom that `native_decide` introduces, or a custom axiom fails
 the build. `Audit.lean` prints the dependencies of the named safety theorems, and
 `scripts/verify.py` checks that every requested report is present.
 
-All of this concerns the formal evaluator over finite histories and the Lean
-decision functions. Whether an English policy, the Python host, timestamps or the
-host's event stream are faithful is outside these proofs; the
-[guarantee boundary](guarantees.md) spells out what is assumed.
+The [guarantee boundary](guarantees.md) lists what these proofs assume about the
+English policy, the Python host, timestamps and the host's event stream.

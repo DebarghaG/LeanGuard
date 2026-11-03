@@ -3,9 +3,9 @@
 [Dogwood](https://github.com/dogwood-policy/dogwood) is a runtime-verification
 language for AI agents, and its guide contains 86 worked examples. This project
 writes every one of them as a native LeanGuard policy, then runs both
-implementations on the same traces to see whether they agree. It's a test of
-whether LeanGuard's public API, as it stands, can express someone else's policy
-language. It could: no LeanGuard changes were needed.
+implementations on the same traces to see whether they agree. It tests whether
+LeanGuard's public API can express another policy language, and every example was
+written without changes to LeanGuard.
 
 Everything here lives in a separate Lake project. None of these policies go into
 LeanGuard's built-in registry, and there is no Dogwood parser: each example was
@@ -72,8 +72,7 @@ kept out of the source distribution.
 
 ## Semantics that matter
 
-Most disagreements you'd expect between two policy engines come down to a handful of
-modeling choices. These are the ones this port makes.
+The port makes the following modeling choices.
 
 - One line is one timepoint. Two events with the same timestamp are still two
   positions. `formerly` includes the current position, and windows include their
@@ -105,8 +104,8 @@ modeling choices. These are the ones this port makes.
   schema, typed Cedar Long inputs, integer-second timestamps and consistent scope
   fields. Decimal context values are exact signed numbers with four decimal places, and
   clocks are UTC milliseconds. The adapter doesn't parse general Cedar or validate entity
-  stores, and the two languages' handling of malformed records and error recovery are
-  not claimed to match.
+  stores, and it doesn't compare how the two handle malformed records or recover from
+  errors.
 
 Some source examples do less than their names or comments suggest, and the port keeps
 them that way:
@@ -126,9 +125,6 @@ them that way:
   all. Because default denial would hide a broken threshold or sum in those two, the
   runner also compares whether the forbid itself fires.
 
-The point of the exercise is faithful representation, so these rules are ported as
-written. They aren't recommendations for production guardrails.
-
 ## Proof scope
 
 `lake build` checks `GuideAudit.lean`, which audits the runtime entry point and every
@@ -143,9 +139,9 @@ revocation at any later position in the principal's history. Replaying the publi
 access trace gives Grant: deny → Access: allow → Revoke: deny → Access: deny.
 
 The theorems are about the encoded policies and the facts they're given. Agreement in
-replay is test evidence that the hand ports are right. Equivalence to Dogwood's Rust
-implementation, truthful logs, and correct provider results are all outside what's
-proved; the [guarantee boundary](../../docs/guarantees.md) covers this in general.
+replay is test evidence that the hand ports are right. Truthful logs and correct
+provider results are assumed, as the [guarantee boundary](../../docs/guarantees.md)
+describes.
 
 ## Repair experiments
 
@@ -165,6 +161,5 @@ lake build LeanGuard.Experimental.TemporalRepair
 These repair contracts keep the action and the trusted evidence fixed. Selling fewer
 shares still needs the user's permission, since a policy-compliant call isn't
 necessarily what they asked for. A missing approval, an expired grant or a spent
-budget can only be fixed by new trusted events, after which the call can be retried.
-When candidate search fails, all it shows is that none of the candidates worked. The
+budget can only be fixed by new trusted events, after which the call can be retried. The
 [repair guide](../repair/README.md) has the details.

@@ -54,15 +54,13 @@ walks through a set of example policies and traces. LeanGuard encodes them as
 .venv/bin/python -m scripts.conformance
 ```
 
-The runner checks that LeanGuard reproduces the article's published verdicts. It
-says nothing about whether the two engines agree on traces the article doesn't
-cover.
+The runner checks that LeanGuard reproduces the article's published verdicts.
 
 A few details differ from the article's presentation. LeanGuard denies by
 default, so snippets that contain only a `forbid` rule get a base permit. The
 fixtures count whole dollars, while the benchmark adapters use integer cents.
 
-Sale approvals deserve a closer look. A sale is approved only by a real,
+A sale is approved only by a real,
 successful `ApproveSale` response whose output has `approved = true` and whose
 inputs match. The backend behind `ApproveSale` must therefore consult a trusted
 approval authority. To follow the article, these approvals are reusable for an
@@ -109,18 +107,7 @@ no options, accepts `--help`. The model launcher's `--cache` flag defaults to
 `HF_HUB_CACHE`, falling back to `HF_HOME` and then your user's Hugging Face
 cache. The [experiment guide](experiments/README.md) covers the full workflow.
 
-Older scripts may use the previous command names:
-
-| Old | New |
-| --- | --- |
-| `python -m leanguard.benchmark` | `python -m scripts.experiments.benchmark` |
-| `python -m leanguard.score_saved` | `python -m scripts.experiments.score_saved` |
-| `python -m leanguard.trajectory_*` | `python -m scripts.experiments.trajectory_*` |
-| `python -m leanguard.conformance` | `python -m scripts.conformance` |
-| `pip install '.[replay]'` | `pip install '.[experiments]'` |
-
-The host and engine imports and the `leanguard` CLI did not change. Saved
-experiment artifacts record the commands and source hashes that produced them;
+Saved experiment artifacts record the commands and source hashes that produced them;
 to reproduce one exactly, check out its recorded revision.
 
 ## Release candidates

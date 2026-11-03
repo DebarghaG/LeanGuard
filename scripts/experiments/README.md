@@ -126,10 +126,9 @@ live-state check get a reward of zero in the all-attempts result, with the
 upstream diagnostic kept alongside. The JSON and CSV results go to
 `all-episode-scores/`, and the script won't overwrite an existing one.
 
-Repeated-denial and recovery metrics only describe what was observed. If the
-agent is denied and a later call is admitted, the transcript doesn't show that
-the agent understood and fixed the problem. The saved checkpoints don't support
-counterfactual branches either.
+Repeated-denial and recovery metrics describe what was observed. A later
+admitted call after a denial doesn't show that the agent understood the problem,
+and the saved checkpoints don't support counterfactual branches.
 
 Live protocol tests call the model and are opt-in:
 
@@ -184,7 +183,7 @@ never its own outcome.
 Facts come from two places: the outputs of recognized earlier tool calls, and
 literal identity or reason text from the customer. There is no hidden task
 solution, and the initial database is never used to fill gaps. Missing flight
-schedules or historical disruption facts simply stay unavailable. A write or an
+schedules or historical disruption facts stay unavailable. A write or an
 unknown tool invalidates any state it might have changed, even when it returned
 an error. Clocks use the pinned domain times, and the recorded outputs and
 available pre-call facts are kept on each historical event. The documented fuvty
@@ -209,9 +208,8 @@ order:
    or outcomes.
 5. `allow`: the host's argument checks and the native decision both pass.
 
-The category is a summary for reading reports. It doesn't relax the policy, and
-every native rule value and error remains in the output, including evidence gaps
-beyond the primary category.
+The category is a summary for reading reports. Every native rule value and error
+remains in the output, including evidence gaps beyond the primary category.
 
 The `code_evaluation` tool, which runs arbitrary code against the database, is
 unsupported because it doesn't correspond to any one named tool. A denial there
@@ -235,36 +233,28 @@ file.
 
 Neither experiment produces an official benchmark score. The local runs are
 instrumented self-play on current text-domain tasks, and their timings aren't a
-controlled measurement of serving throughput. Neither score proves full
-compliance with the English policy.
+controlled measurement of serving throughput.
 
-The simulated confirmation screen is itself a model, and a model can approve
-the wrong thing. Approval evidence in these runs is only as good as that model's
-judgment; it tells you nothing about whether the acting agent understood the
-customer. Production integrations need confirmation from an independently
-authorized, structured source, as discussed in the
-[guarantee boundary](../../docs/guarantees.md).
+The simulated confirmation screen is a model and can approve the wrong thing, so
+approval evidence in these runs depends on its judgment. Production integrations
+need confirmation from an independently authorized, structured source, as
+discussed in the [guarantee boundary](../../docs/guarantees.md).
 
 Replay follows the original recorded continuation, including outcomes of calls
-LeanGuard would have blocked, so later verdicts describe the history as it
-actually happened. The dataset's original reward is carried through unchanged
-and says nothing about task success under enforcement. For the same reason,
-these audits alone can't show that LeanGuard beats the source projects'
-validation methods. Before calling a denial an over-refusal, check that the
-policies, tool interfaces and pre-call evidence actually match; the
+LeanGuard would have blocked, and carries the dataset's original reward through
+unchanged. Before calling a denial an over-refusal, check that the policies, tool
+interfaces and pre-call evidence match; the
 [coverage guide](../../docs/coverage.md) records the known differences in
 interpretation.
 
-To compare consent handling properly, reconstruct what the customer authorized
-from the preceding dialogue, as a structured receipt of effects, resources,
-payment, charges and conditions, and check the candidate call against it.
-Asking a second model whether it approves the call is no substitute. Original
+To compare consent handling, reconstruct what the customer authorized from the
+preceding dialogue as a structured receipt of effects, resources, payment,
+charges and conditions, and check the candidate call against it. Original
 backend snapshots are usable only with verified provenance and a mapping from
 trajectory to snapshot; an RL task's database path can't identify the initial
 state of an SFT conversation by itself.
 
 The [LeanLTL theorems](../../docs/leanltl.md) hold for each native context that
-replay constructs. They don't cover the importer, whether the recorded
-observations are authentic, or whether a context matches the source dataset's
-English policy. Historical run reports remain in Git history, and generated
-results stay with their run artifacts.
+replay constructs. The importer, the authenticity of the recorded observations,
+and the match between a context and the source dataset's English policy are
+outside them.

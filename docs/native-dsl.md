@@ -101,7 +101,7 @@ conversation `(principal, session)`, or the same resource `(principal, resource)
 Project with `.within` before using `previous` or `since`. If you instead compare
 IDs inside an atom, unrelated events interleaved in the history still shift what
 "previous" points at. Scopes are chosen per rule rather than applied globally, so
-a resource-scoped rule can deliberately span conversations.
+a resource-scoped rule can span conversations.
 
 Every constructor has a compositional LeanLTL meaning through `Formula.toLeanLTL`.
 Import `LeanGuardProofs` for `evaluate_leanLTL_correct`, the verified decidability
@@ -121,14 +121,13 @@ saying "the user agreed", or a tool response, cannot create a confirmation event
 
 `confirmedWithin seconds` adds an inclusive expiry, measured from the decision's
 clock, on top of the same single-use and revocation conditions. Plain `confirmed`
-has no expiry. The [article examples](../LeanGuard/DogwoodExamples.lean) take a
-different approach on purpose: they use a reusable `ApproveSale` response
-predicate that stays valid for an hour.
+has no expiry. The [article examples](../LeanGuard/DogwoodExamples.lean) use a
+reusable `ApproveSale` response predicate instead, which stays valid for an hour.
 
 `observed actions` requires a successful tool event for one of `actions` on the
 same resource, in the same conversation and workflow. It shows that a read
-happened at some point. Whether the data is still current is a separate question,
-which is why eligibility checks read the authoritative snapshot taken at admission.
+happened at some point, not that the data is still current, so eligibility checks
+read the authoritative snapshot taken at admission.
 
 `neverDispatched actions` enforces one-shot actions per resource, across sessions.
 `singleFlight` blocks a call while an earlier dispatch in the same conversation or
@@ -196,18 +195,13 @@ control showing that failure.
    approvals, malformed facts, timestamps on the window boundary, errors, retries,
    and the actual effects on the backend.
 
-Contexts are JSON-backed today, so checks look fields up by name. A typed record
-decoder would remove those repeated lookups and let you prove domain invariants,
-and the evaluator correctness theorem would carry over unchanged.
-
 ## Proof contracts and downstream audits
 
 `VerifiedPolicy` pairs a pack with the property it is meant to enforce. It holds
 `pack`, a descriptive `property` label, `Safe : Context → Prop`, and
 `sound : ∀ ctx, (decidePolicy pack ctx).allow = true → Safe ctx`. The proof has to
-be about the exact pack being served. Lean will happily accept a vacuous
-`Safe`, or a pack that denies everything, so the property itself still needs a
-human reviewer.
+be about the exact pack being served. Lean accepts a vacuous `Safe`, or a pack
+that denies everything, so a person has to review the property itself.
 
 The [document policy](../examples/custom_policy/Guard.lean) proves approval
 evidence, non-consumption and dispatch-reservation bounds. Its default
@@ -252,15 +246,14 @@ snapshot); outcomes may carry `output`. Historical inputs and facts must use the
 units the policy expects. `GuardHost.events()` exports exactly this shape,
 including recorded dispatches. Events with equal timestamps keep their list order.
 The importer has to resolve dataset-specific aliases and pair responses with
-requests itself, because the API will not guess.
+requests itself.
 
-The native `decision` is only as good as the evidence supplied, which is why each
-result also has an `assessment`: `allowed`, `denied` or `insufficient_evidence`.
+Each result has an `assessment` alongside the decision: `allowed`, `denied` or
+`insufficient_evidence`.
 The last appears when decoding fails, when a request lacks inputs or facts, when
 `history_complete=False`, or when the record lists `missing_evidence` labels.
-Those labels stay attached for the rest of the replay. They describe how complete
-the evidence is; they do not classify model misconduct or policy overrefusal, and
-the importer must flag any gaps that the trace itself cannot reveal.
+Those labels stay attached for the rest of the replay. The importer must flag any
+gaps that the trace itself cannot reveal.
 
 Replay never invents confirmations, dispatches or outcomes. Recorded outcomes
 still advance the history after a denied call, so later results describe the

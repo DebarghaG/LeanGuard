@@ -8,8 +8,7 @@ The domain modules under `LeanGuard/Domains/` are the source of truth. Every
 compiled rule has an ID, the actions it applies to, named checks and a description
 of its source clause, and `leanguard manifest DOMAIN` prints them all. Native input
 schemas exist for all 16 retail, 14 airline and 13 telecom assistant tools at this
-pin, but having a schema for a tool doesn't mean every rule about that tool is
-enforced.
+pin.
 
 ## What is enforced
 
@@ -97,9 +96,6 @@ looser reading would accept.
 - Lean's proofs don't extend to what the backend does after a call: refunds
   settling, side effects matching the request, inventory staying consistent.
 
-The local model runs and serving measurements are instrumented experiments. They
-aren't official benchmark scores, a measured false-denial rate, or a load test.
-
 ## Tests
 
 The tests check this subset with allowed and denied examples:
@@ -115,10 +111,5 @@ The tests check this subset with allowed and denied examples:
   permitted mutations in all three domains.
 - `tests/test_mcp.py` checks both in-process and stdio MCP calls.
 
-Passing these tests doesn't show that every English clause is captured or that
-every backend mutation is covered. Claims like that would need a clause-by-clause
-formal specification and a much larger differential benchmark.
-
 The [Dogwood conformance suite](../scripts/conformance.py) checks the article's
-traces separately, against toy trading tools. It doesn't bear on how completely
-the τ-bench policies are covered.
+traces separately, against toy trading tools.

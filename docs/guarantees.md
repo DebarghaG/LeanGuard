@@ -1,10 +1,9 @@
 # What LeanGuard guarantees
 
-LeanGuard's claims come in three layers, and it helps to keep them apart. Some
-things are proved in Lean and checked by the kernel. Some are enforced by the
-Python host at runtime, by code that is tested but not proved. And some are
-assumptions about your deployment that nothing in this repository can check.
-This page goes through each in turn.
+LeanGuard's claims come in three layers. Some things are proved in Lean and
+checked by the kernel. Some are enforced at runtime by the Python host, whose code
+is tested but not proved. The rest are assumptions about your deployment that
+nothing in this repository can check.
 
 ## Proved in Lean
 
@@ -55,9 +54,9 @@ and `scripts/verify.py` fails if any report is missing.
 Downstream packages run the same audit over their own code with
 `LeanGuard.Audit.check`, giving it their declaration roots and namespaces. If you
 use `serveVerified`, `VerifiedPolicy.sound` ties the executable pack you ship to
-the safety property you stated. Whether that property says anything useful, and
-whether your adapter feeds it honest data, are questions for review; the compiled
-server doesn't recheck a proof on each request. The
+the safety property you stated. You still have to review that the property is
+the one you want and that your adapter supplies correct data. The compiled server
+doesn't recheck the proof on each request. The
 [LeanLTL guide](leanltl.md) covers how traces are represented and how the
 correspondence proofs work.
 
@@ -73,28 +72,27 @@ exception with its own correctness theorem. For the rest, predicate tests and th
 say those histories are genuine, that they agree with earlier contexts, or that
 the Python host's behaviour refines the Lean model.
 
-And admission checks can only enforce safety: something bad never happens. They
-can't make something good happen eventually, so LeanGuard can't promise that a
+Admission checks enforce safety properties, which say that something bad never
+happens. They can't make something good happen eventually, so LeanGuard can't promise that a
 task finishes, that the agent's free-text replies are true, that a refund arrives
 days later, or that the user ever answers.
 
 ### Consent
 
-Approval exists to constrain what the agent does. If a
-customer approves buying a purple shirt for a stated price, that approval must not
+Approval exists to constrain what the agent does. If a customer approves buying a purple shirt for a stated price, that approval must not
 let the agent buy a black shirt, or charge more. The host binds each approval to
 the exact arguments and the backend revision, and the Lean guard requires a
-matching approval that hasn't been used or revoked. The agent saying "the customer
-approved" counts for nothing.
+matching approval that hasn't been used or revoked. Text from the agent, such as
+"the customer approved", is not an approval.
 
 The weak point is whoever produces the approval. In the benchmark experiments a
 second model plays the customer's approval screen, and that model is an
 unverified consent authority. If it approves the black shirt by mistake, the
-formula has no way to tell that from a real customer approving a new proposal,
-and no amount of prompting fixes this. End-to-end consent needs approval that is
-structured and independently authorized, plus enforcement that the call stays
-within it. Turning free-form dialogue into that kind of approval is a separate
-problem, and nothing here proves that a model understands what a user agreed to.
+formula has no way to tell that from a real customer approving a new proposal.
+End-to-end consent needs approval that is structured and independently
+authorized, plus enforcement that the call stays within it. LeanGuard provides
+the enforcement. Turning free-form dialogue into structured approval is a
+separate problem that it doesn't address.
 
 ## Enforced by the host
 
@@ -152,8 +150,7 @@ example, which accepts responses alone, is compiled only into
 The article shows trace fragments that begin with responses whose requests
 aren't included, so the offline runner accepts that shape. The live engine
 doesn't: `validateOutcome` still rejects an outcome that doesn't match a
-dispatch. The article fixtures are tests, and agreeing with them doesn't make
-LeanGuard equivalent to Dogwood in general.
+dispatch.
 
 ## What you have to trust
 
@@ -168,8 +165,8 @@ LeanGuard equivalent to Dogwood in general.
   LeanGuard doesn't check them against the world.
 - Complete interception. The agent must not hold backend credentials, a
   second unguarded way to reach the tools, access to the journal, or the engine's
-  control channel. A Python proxy object is no substitute for an operating-system
-  sandbox.
+  control channel. Wrapping the tools in a Python object doesn't isolate them, so
+  run the agent in an operating-system sandbox.
 - The toolchain. The pinned compiled policy, the Lean compiler and runtime,
   Python and its dependencies, SQLite, and the filesystem's durability and access
   controls. Journals hold sensitive raw facts, proposals and outcomes, so keep

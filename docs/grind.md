@@ -17,8 +17,7 @@ the repair regression suite after any toolchain upgrade.
 
 ## Where grind lives
 
-grind's source is split across three directories, and reading only the first gives
-a misleading picture.
+grind's source is split across three directories.
 
 [`Init/Grind`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6/src/Init/Grind)
 holds the logical foundation. `Norm.lean` supplies the normalization equalities;
@@ -57,9 +56,8 @@ all in these two.
    beta-reduces and processes hypotheses, and `assertExtra` adds explicit facts and
    activates lemmas. `Simp.lean::preprocessImpl` runs grind's normalizer, then
    canonicalizes projections, nested proofs, universe levels and shared subterms,
-   composing the rewrite proofs with `Eq.mp`. The normalizer's discharger deliberately
-   ignores local assumptions, which keeps its cache valid across search branches. This
-   is a different thing from calling `simp_all` over and over.
+   composing the rewrite proofs with `Eq.mp`. The normalizer's discharger ignores
+   local assumptions, which keeps its cache valid across search branches.
 
 4. Maintain an equality graph that produces proofs. `Types.lean::ENode` and
    `GoalState` keep the equivalence classes, parent links, congruence tables,
@@ -151,8 +149,7 @@ The defaults are 4 splits, 3 E-matching rounds per split phase, term generation 
 and 256 instances per branch, on top of Lean's usual heartbeat and recursion limits.
 They keep the search bounded, so the search is incomplete: a candidate that fails is
 unproved, and showing it impossible would need a separate proof of the negated goal.
-Candidate order expresses the caller's preference and implies nothing about
-optimality.
+Candidates are tried in the order the caller gives them.
 
 ## Regression checks
 

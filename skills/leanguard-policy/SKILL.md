@@ -27,12 +27,11 @@ neither this skill nor Lean.
   independently of the implementation, so that a mistake in the rules shows up as a
   failed proof. Prove that `decidePolicy` admission implies it, and package the result
   as a `VerifiedPolicy`: `property` names the statement, `Safe` states it, and `sound`
-  proves the implication. Be wary of a property that is trivially true or a pack that
-  denies everything; both type-check without saying anything useful.
+  proves the implication. A property that is trivially true, or a pack that denies
+  everything, also type-checks, so review the property itself.
 - A custom predicate needs its own argument that it matches the English rule it
-  encodes. The generic temporal correctness theorem covers the evaluator. It says
-  nothing about whether your predicates match the prose, whether observations are
-  authentic, whether a model understood consent, or whether a task eventually succeeds.
+  encodes. The generic temporal correctness theorem covers the evaluator, not your
+  predicates.
 
 ## Build and verification
 
@@ -49,8 +48,7 @@ run_cmd do
 Substitute your own declarations. The roots must cover the deployed pack, its property
 theorem and the executable. Auditing whole namespaces also catches unfinished
 declarations nobody uses, and the transitive check catches dependencies outside those
-namespaces. Plain `lake build` and `lake env lean` are all you need; nothing depends on
-LeanBeam or an editor-specific Lean skill. Never use `sorry`, a custom axiom or
+namespaces. Plain `lake build` and `lake env lean` are all you need. Never use `sorry`, a custom axiom or
 `native_decide` to get the release audit to pass.
 
 Proofs and trace tests catch different mistakes, so do both. Drive allowed and denied
@@ -77,9 +75,8 @@ For offline analysis, use `audit` and `replay` on normalized `TraceEvent` record
 chronological order. Keep the recorded dispatches and outcomes, and never fill in
 consent that isn't in the trace. Mark incomplete histories and missing evidence, and
 read `assessment` rather than the raw decision, which is conditional on the evidence
-supplied. Replay follows the original trajectory, so it can't tell you whether a task
-would have succeeded under enforcement.
+supplied.
 
 Build and audit in development and CI, then deploy the compiled executable via
-`binary=...`. Changing the executable means migrating its journals deliberately. At run
+`binary=...`. Changing the executable requires migrating its journals. At run
 time the host evaluates the compiled policy; no LLM is called and no proof search runs.

@@ -10,10 +10,6 @@ relevant facts from your backend, and asks the compiled Lean engine for a decisi
 The host writes that decision to a journal on disk, and only then runs the tool.
 A denied call never reaches the backend.
 
-The design borrows Dogwood's separation of events from policy and its temporal
-guards; the [article conformance notes](scripts/README.md#article-conformance)
-show how LeanGuard handles the examples from the Dogwood announcement.
-
 ## Try it
 
 You need Linux, Python 3.12 or later with `venv`, Git and curl. The setup script
@@ -146,8 +142,8 @@ lists what your adapter is trusted to get right.
 
 The server exposes three tools to the agent: `policy_manifest`,
 `available_tools` and `guarded_call`. Don't give the agent the underlying tools
-as well, or it can simply go around the guard. Approval, identity and policy
-loading are deliberately not available as agent tools.
+as well, or it can go around the guard. Approval, identity and policy loading
+are not available as agent tools.
 
 The command-line server has no approval screen, so writes that need approval are
 denied. To allow them, run the Python confirmation flow above and pass its
@@ -230,8 +226,7 @@ The [grind study](docs/grind.md) explains which parts of `grind` it builds on.
 
 ### Replaying saved traces
 
-You can check a recorded history against a policy
-without running any tools:
+You can check a recorded history against a policy without running any tools:
 
 ```python
 from leanguard import Engine, replay
