@@ -1,7 +1,7 @@
 import LeanGuard.Tests
 import LeanGuard.PolicyProofs
 
-/-! Kernel-checked regressions stated directly as LeanLTL satisfaction propositions. -/
+/-! Regression tests written as LeanLTL satisfaction statements and checked with `decide`. -/
 
 namespace LeanGuard.TemporalTests
 open Tests

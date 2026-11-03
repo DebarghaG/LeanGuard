@@ -35,6 +35,9 @@ def main():
         unexpected = {name.strip() for name in group.split(",") if name.strip()} - standard
         if unexpected:
             raise RuntimeError(f"nonstandard proof axioms: {unexpected}")
+    run("lake", "build", "LeanGuard.Experimental.TemporalRepair")
+    for example in ("Examples", "Grind", "Adversarial", "TemporalStress"):
+        run("lake", "env", "lean", f"examples/repair/{example}.lean")
     sources = ("python", "tests", "scripts", "setup.py", "examples")
     run(sys.executable, "-m", "ruff", "check", *sources)
     run(sys.executable, "-m", "ruff", "format", "--check", *sources)

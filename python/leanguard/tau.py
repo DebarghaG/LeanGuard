@@ -1,7 +1,7 @@
-"""Adapters for a pinned, instrumented text-domain τ-bench baseline.
+"""Adapters for the pinned τ-bench text domains.
 
-This module reads authoritative domain state, never task solutions or evaluation
-criteria. Decisions about that state are made by the compiled Lean policy pack.
+They read live domain state only, never task solutions or evaluation criteria.
+The compiled Lean policy makes every decision.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def jsonable(value):
 
 
 def wire_value(environment, value):
-    """Use τ-bench's wire representation once, including date and model handling."""
+    """Convert a value to τ-bench's JSON form, which handles dates and models."""
     if isinstance(value, str):
         return value
     return json.loads(environment.to_json_str(value))
@@ -96,7 +96,7 @@ def normalize(value, key=""):
             result = {k: scaled(v, 100) for k, v in value.items()}
         if "dates" in value:
             for day, instance in result["dates"].items():
-                # Imported partial observations must not manufacture missing schedules.
+                # Partial imported observations leave missing schedules missing.
                 for source, target in (
                     ("scheduled_departure_time_est", "departure_epoch"),
                     ("scheduled_arrival_time_est", "arrival_epoch"),
@@ -299,7 +299,7 @@ class TauAdapter:
         return wire_value(self.environment, result)
 
     def user_action(self, host, action: str, arguments: dict):
-        """User simulator actions have an independent role and are observed after synchronization."""
+        """Run a user-simulator tool under its own role, then record what it observed."""
         with host._lock, self.lock:
             result = self.environment.make_tool_call(action, requestor="user", **arguments)
             self.environment.sync_tools()
@@ -308,10 +308,10 @@ class TauAdapter:
 
 
 class GuardedEnvironment:
-    """Proxy for τ-bench orchestration; preserve agent/user tool separation.
+    """Routes τ-bench assistant tools through the guard; user tools keep their own role.
 
-    `confirmation` must be a trusted UI callback returning a Boolean after displaying
-    the proposal, not an agent inference. All runs through this wrapper are instrumented.
+    `confirmation` must be a trusted UI callback that shows the proposal and returns
+    the user's yes or no. Runs through this wrapper differ from stock τ-bench.
     """
 
     def __init__(self, host, confirmation=None):

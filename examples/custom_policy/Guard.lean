@@ -14,8 +14,8 @@ def pack : PolicyPack := withSchemas {
     require "documents.single" ["read", "write"] singleFlight "unresolved dispatch exclusion"]
 } [("read", .object [] []), ("write", .object ["value"] [("value", .string)])]
 
-/-- Write admission requires prior approval evidence, no previous use of that
-approval, and the reserved dispatch must fit both hourly budget bounds. -/
+/-- An allowed write has an earlier approval that no dispatch has used yet, and the
+write fits within the hourly count and amount budget. -/
 def Safe (c : Context) : Prop := c.request.action = "write" →
   (∃ i ∈ List.range (projectAtHead .conversation c.history).tail.length,
     Holds (atomValue c) confirmedEvent ((projectAtHead .conversation c.history).tail.drop i)) ∧

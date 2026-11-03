@@ -1,4 +1,4 @@
-"""Public runtime/replay contracts and genuinely separate Lean consumer builds."""
+"""Tests for the public runtime and replay APIs, including a separate downstream Lean build."""
 
 import json
 import shutil

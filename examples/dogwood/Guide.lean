@@ -1,9 +1,9 @@
 import LeanGuard.PolicyProofs
 
 /-!
-Native encodings of the 86 Dogwood guide examples pathValue revision
-c6237c88099b3f492ecc5fcee42df06a19224b97. This is an example registry, not a
-Dogwood parser. See README.md for the normalization and proof boundary.
+Hand-written LeanGuard versions of the 86 Dogwood guide examples at revision
+c6237c88099b3f492ecc5fcee42df06a19224b97. README.md explains how events are normalized
+and what is proved.
 -/
 namespace DogwoodGuide
 open Lean LeanGuard
@@ -26,7 +26,7 @@ def inputInt (c : Context) (key : String) := intAt c.arguments [key]
 
 def native (name : String) (p : Context → Except String Bool) : Formula Check := check name p
 
--- The source schema's finite action universe, including its group actions.
+-- Every action the source schema declares, including group actions.
 def actions : List String := ["Access", "Alert", "Approve", "ApproveSale", "CallTool",
   "Compute", "GetStockInfo", "Grant", "Heartbeat", "Http", "InvokeAgent", "InvokeLLM",
   "Login", "Logout", "Mcp", "Read", "Revoke", "SellShares", "Submit", "Transfer",
@@ -55,8 +55,8 @@ def startsWith (field value : String) : Formula Check := native "startsWith" fun
 def capByStock (special : String) (cap other : Int) : Formula Check := native "stock_cap" fun c ↦ do
   return (← inputInt c "shares") ≤ if (← inputText c "stock") == special then cap else other
 
--- Context output, clock, entity ancestry and provider returns are trusted
--- adapter data. They are not invented tool outcomes or user consent.
+-- Context output, the clock, entity ancestry and provider results come from the
+-- adapter and are trusted as given.
 def outputPresent (c : Context) : Bool := (pathValue c.facts ["context", "output"]).isOk
 
 def proceeds (p : Int → Bool) : Formula Check := native "proceeds" fun c ↦ do
@@ -78,7 +78,7 @@ def providerBool (field : String) : Formula Check := native field fun c ↦
 def providerInt (field : String) (p : Int → Bool) : Formula Check := native field fun c ↦ do
   return p (← intAt c.facts ["providers", field])
 
--- Preserve logged data separately from the request-only Cedar context.
+-- Logged data is kept apart from the Cedar context, which exists only on the request.
 def logged (e : Event) (path : List String) : Option Json :=
   ((Json.parse e.factsJson).bind fun j ↦ pathValue j ("logged" :: path)).toOption
 
@@ -124,8 +124,8 @@ def countTransfers : Formula Check := native "transfer_timepoints" fun c ↦
 def pendingTransfers : Formula Check := native "pending_timepoints" fun c ↦
   .ok ((recent c "Transfer" "success").length < (recent c "Transfer" "request").length)
 
--- One source trace line is one timepoint, even when timestamps are equal.
--- Without formerly, these bodies see only the head, not the whole history.
+-- Each trace line is its own timepoint, even when timestamps are equal.
+-- Without `formerly`, these bodies only see the current event.
 def currentLoginCount (threshold : Nat) : Formula Check := native "current_login_count" fun c ↦
   .ok (((c.history.take 1).filter (fun e ↦
     matching c e "Login" "request" && pins c e ["server"])).length > threshold)
@@ -142,7 +142,7 @@ def transferSum (kind group : String) (positiveOnly : Bool) (bound : Int) : Form
       !positiveOnly || pins c e ["user"]).mapM fun e ↦ do
         let some j := logged e [group, "amount"] | throw "missing amount"
         j.getInt?
-    -- Binder (amount,timepoint) retains equal amounts pathValue different positions.
+    -- Binding on (amount, timepoint) keeps equal amounts at different positions.
     return ((rows.filter fun n ↦ !positiveOnly || n > 0).foldl (· + ·) 0) > bound
 
 def joined (big : Bool := false) (byPrincipal : Bool := false) : Formula Check :=
@@ -284,14 +284,14 @@ def resolve (name : String) : Except String PolicyPack :=
   | some pack => .ok pack
   | none => .error s!"unknown guide example: {name}"
 
-/-- Every encoded decision is equivalent to its LeanLTL meaning, including
-errors. This does not assert equivalence to Dogwood's Rust interpreter. -/
+/-- Every encoded decision agrees with its LeanLTL meaning, error gate included.
+(Agreement with Dogwood's own interpreter is tested by run.py, not proved.) -/
 theorem sound (pack : PolicyPack) (c : Context) :
     (decidePolicy pack c).allow = true ↔ historyTrace c.history ⊨ pack.toLeanLTL c :=
   decision_leanLTL_correct pack c
 
-/-- Access requires a grant witness in the hour and no matching revocation
-pathValue any subsequent position in the principal's projected history. -/
+/-- An allowed access has a grant within the past hour and no matching revocation
+at any later position in the principal's history. -/
 theorem access_witness (c : Context)
     (allowed : (decidePolicy (mkExample "access_not_revoked_since_grant" ["Access"] accessCondition) c).allow = true) :
     ∃ i ∈ List.range (projectAtHead .principal c.history).length,

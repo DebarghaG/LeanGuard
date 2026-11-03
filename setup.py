@@ -1,7 +1,7 @@
-"""Bundle an explicitly supplied native build in a platform wheel.
+"""Package a prebuilt native executable into a platform wheel.
 
-Editable/source installs remain Python-only. scripts/release.py supplies the binary
-and build metadata after verification; installation never downloads executable code.
+Editable and source installs are Python-only. scripts/release.py supplies the binary
+and build metadata after verification. Installing never downloads executables.
 """
 
 import os

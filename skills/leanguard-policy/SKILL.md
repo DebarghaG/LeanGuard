@@ -4,35 +4,39 @@ description: Author, prove, and integrate custom LeanGuard runtime tool policies
 license: MIT
 ---
 
-Build a downstream policy package against a pinned LeanGuard revision. Read the
-matching checkout's `docs/native-dsl.md` and `docs/guarantees.md`, and start from
-`examples/custom_policy/`. The source repository is
-[LeanGuard](https://github.com/DebarghaG/LeanGuard); use documentation from the same
-revision as the dependency. Consumers of a prebuilt policy do not need this skill
-or a Lean installation at runtime.
+You're building a downstream Lean package that defines a tool policy, proves a safety
+property about it, and ships it as an executable that LeanGuard's Python host can run.
+Pin a [LeanGuard](https://github.com/DebarghaG/LeanGuard) revision and read the docs
+from that same checkout: `docs/native-dsl.md` for the policy language and
+`docs/guarantees.md` for what is proved and what the integration must supply. Start
+from a copy of `examples/custom_policy/`. Anyone who only runs a prebuilt policy needs
+neither this skill nor Lean.
 
 ## Authoring
 
-- Establish tool schemas, authoritative facts and units, principal/session/resource
-  scope, and which decisions need structured consent. Missing facts are explicit
-  errors. Tool outputs and the acting agent's claims do not establish user approval.
-- Write a `PolicyPack` using named `permit`, `require`, and `forbid` rules, then
-  apply `withSchemas`. Prefer record syntax for packs. Reuse `confirmed`,
-  `confirmedWithin`, `observed`, `quota`, and `singleFlight` where their documented
-  meanings match the requested policy. Unknown tools remain default-denied.
-- State the intended safety property as `Context → Prop` independently enough to
-  reveal a mistaken implementation. Prove that actual `decidePolicy` admission
-  implies it. Package the result in `VerifiedPolicy`; `property` names the statement,
-  `Safe` states it, and `sound` proves the implication. A proof of `True`, or an
-  all-denying policy, does not establish useful coverage of the requested behavior.
-- Custom predicates need their own correspondence arguments where appropriate.
-  The generic temporal correctness theorem does not prove English-policy fidelity,
-  authentic observations, natural-language consent understanding, or eventual success.
+- Before writing rules, pin down the tool schemas, the authoritative facts and their
+  units, how principal, session and resource scope the policy, and which decisions
+  need structured user consent. A missing fact must surface as an explicit error. User
+  approval comes only from the host's confirmation flow; tool outputs and the acting
+  agent's claims never count as approval.
+- Write a `PolicyPack` from named `permit`, `require` and `forbid` rules, preferably in
+  record syntax, and wrap it with `withSchemas`. Tools without a schema stay denied.
+  Reach for `confirmed`, `confirmedWithin`, `observed`, `quota` and `singleFlight`
+  whenever their documented meaning is what the policy asks for.
+- State the safety property you actually want as a `Context → Prop`, and write it
+  independently of the implementation, so that a mistake in the rules shows up as a
+  failed proof. Prove that `decidePolicy` admission implies it, and package the result
+  as a `VerifiedPolicy`: `property` names the statement, `Safe` states it, and `sound`
+  proves the implication. A property that is trivially true, or a pack that denies
+  everything, also type-checks, so review the property itself.
+- A custom predicate needs its own argument that it matches the English rule it
+  encodes. The generic temporal correctness theorem covers the evaluator, not your
+  predicates.
 
 ## Build and verification
 
-Use `LeanGuard.serveVerified verified` for the executable entry point. Keep the
-audit in a default Lake target. Import the downstream executable and run:
+Use `LeanGuard.serveVerified verified` as the executable's entry point, and keep the
+audit in a default Lake target. The audit imports the executable and runs:
 
 ```lean
 run_cmd do
@@ -41,35 +45,38 @@ run_cmd do
     #[`MyPolicy, `LeanGuard]
 ```
 
-Replace the names with actual declarations. The roots must include the deployed
-pack, its property theorem, and the executable. The namespace audit includes unused
-unfinished declarations, and transitive auditing catches dependencies outside those
-namespaces. Use ordinary `lake build` and `lake env lean`; the workflow has no
-dependency on LeanBeam or editor-specific Lean skills. Do not use `sorry`, custom
-axioms, or `native_decide` to satisfy the release audit.
+Substitute your own declarations. The roots must cover the deployed pack, its property
+theorem and the executable. Auditing whole namespaces also catches unfinished
+declarations nobody uses, and the transitive check catches dependencies outside those
+namespaces. Plain `lake build` and `lake env lean` are all you need. Never use `sorry`, a custom axiom or
+`native_decide` to get the release audit to pass.
 
-Exercise allowed and denied calls through a real `GuardHost` and adapter. Include
-wrong resources/principals, altered arguments, stale/revoked/reused consent, time
-boundaries, missing facts, and uncertain outcomes as relevant to the policy. Check
-actual backend effects. Proof checks and trace examples serve different purposes.
+Proofs and trace tests catch different mistakes, so do both. Drive allowed and denied
+calls through a real `GuardHost` and adapter, and check the backend's actual effects.
+Cover whichever of these apply: wrong resources or principals, altered arguments,
+consent that is stale, revoked or reused, time boundaries, missing facts, and outcomes
+that come back unknown.
 
 ## Runtime and replay
 
-Implement `Adapter.snapshot` and `execute`. Snapshot normalized arguments, exact
-units, authoritative facts, and a revision covering every relevant state change.
-The adapter lock or equivalent backend transaction must cover every writer. Keep
-the acting agent on `GuardHost.execute` or guarded MCP calls; native control channels,
-backend credentials, identity assignment, and `confirm` stay with trusted host code.
+Implement `Adapter.snapshot` and `Adapter.execute`. A snapshot carries the normalized
+arguments with exact units, the authoritative facts, and a revision that changes
+whenever any relevant state changes. The adapter's lock, or an equivalent backend
+transaction, must cover every writer. The acting agent only gets `GuardHost.execute`
+or guarded MCP calls. Native control channels, backend credentials, identity
+assignment and `confirm` all stay in trusted host code.
 
-`prepare → trusted user presentation → confirm → execute` binds approval to the
-exact proposal. Do not let the acting agent rewrite deployed policy or issue its
-own consent. Return generic denial to the agent and retain diagnostics for the host.
+The consent flow is `prepare → trusted user presentation → confirm → execute`, which
+binds the approval to the exact proposal. The acting agent must never be able to
+rewrite the deployed policy or approve its own calls. Return a generic denial to the
+agent and keep the diagnostics for the host.
 
-For offline work use `audit`/`replay` with normalized chronological `TraceEvent`
-records. Preserve recorded dispatches and outcomes; never synthesize missing consent.
-Declare incomplete history and missing evidence, and inspect `assessment` separately
-from the raw conditional decision. Replay cannot measure success after enforcement.
+For offline analysis, use `audit` and `replay` on normalized `TraceEvent` records in
+chronological order. Keep the recorded dispatches and outcomes, and never fill in
+consent that isn't in the trace. Mark incomplete histories and missing evidence, and
+read `assessment` rather than the raw decision, which is conditional on the evidence
+supplied.
 
-Build and audit during development/CI, then deploy the compiled executable through
-`binary=...`. A changed executable needs deliberate journal migration. Runtime calls
-evaluate the compiled policy; they do not invoke an LLM or search for new proofs.
+Build and audit in development and CI, then deploy the compiled executable via
+`binary=...`. Changing the executable requires migrating its journals. At run
+time the host evaluates the compiled policy; no LLM is called and no proof search runs.

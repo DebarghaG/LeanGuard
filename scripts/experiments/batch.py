@@ -18,7 +18,7 @@ class BatchResult:
 
 
 def integration_error(result: dict) -> str | None:
-    """Operational stop signal, not a label for policy-violation research."""
+    """Return the result's integration error, if any; enough of these halt the batch."""
     error = result.get("error", "")
     if not error or error.startswith("ExperimentHalted:"):
         return None

@@ -3,7 +3,7 @@ import LeanGuard.TemporalProofs
 
 namespace LeanGuard
 
-/-- Query membership is exactly eventual satisfaction of its LeanLTL witness predicate. -/
+/-- An event is selected by a query exactly when the trace eventually satisfies its match predicate. -/
 theorem query_leanLTL_membership (q : WindowQuery) (c : Context) (e : Event) :
     e ∈ q.events c ↔
       (historyTrace c.history ⊨ (q.witnessLeanLTL c.request e).finally) := by

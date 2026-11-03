@@ -1,7 +1,7 @@
 """Compare native LeanGuard encodings with the pinned Dogwood guide corpus.
 
-Run from any directory. Upstream files remain in their Apache-2.0 checkout;
-this example does not vendor or relicense them. No model or backend calls.
+Run from any directory. Upstream files are read from your Apache-2.0 checkout
+and never copied into this repository. Makes no model or backend calls.
 """
 
 import argparse
@@ -226,10 +226,11 @@ def render_trace(events):
 
 
 def provider_values(name, event):
-    """Fixture adapters for the declared providers, NOT verified Rhai execution.
+    """Python stand-ins for the guide's information providers, matching their fixtures.
 
-    Pass typed provider RESULTS across the boundary, never a final verdict.
-    The upstream run evaluates the original Rhai implementation independently.
+    They pass typed provider results to Lean, never a final verdict. They are
+    not checked against the Rhai originals, which the upstream run evaluates
+    separately.
     """
     if name not in PROVIDERS:
         return {}
@@ -258,8 +259,8 @@ def provider_values(name, event):
 
 def normalize(name, events):
     for i, e in enumerate(events):
-        # Custom schema explicitly declares attempt as decision; this is not
-        # permission to map arbitrary observations to attempts or confirmations.
+        # Only this schema declares `attempt` as the decision kind. Don't extend the
+        # mapping to other observations, attempts or confirmations.
         kinds = {"request": "request", "response": "success"}
         if name == "login_attempt_custom_kind":
             kinds = {"attempt": "request", "outcome": "success"}

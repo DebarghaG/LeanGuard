@@ -1,33 +1,39 @@
 # LeanLTL integration
 
-LeanLTL is the work of Eric Vin, Kyle A. Miller, and Daniel J. Fremont:
-[LeanLTL: A Unifying Framework for Linear Temporal Logics in Lean](https://doi.org/10.4230/LIPIcs.ITP.2025.37),
-ITP 2025. The paper identifies the upstream
-[`vITP25` source release](https://github.com/UCSCFormalMethods/LeanLTL/releases/tag/vITP25)
-as its supplementary software. Our integration uses the pinned fork described below.
+Every native LeanGuard formula is translated into
+[LeanLTL](https://doi.org/10.4230/LIPIcs.ITP.2025.37), a Lean library for linear
+temporal logics by Eric Vin, Kyle A. Miller and Daniel J. Fremont (ITP 2025), and
+the executable evaluator is proved to agree with that translation on every
+history. This lets you prove properties of a policy with LeanLTL's theorems and
+carry the results over to the runtime verdict.
 
-LeanGuard's temporal language has a compositional interpretation in the pinned
-LeanLTL dependency. `Formula.toLeanLTL` uses the completed `TraceSet` library directly;
-it does not call LeanGuard's evaluator or its older `Holds` specification.
-Lake pins revision `7514f6f035e4b8944299f02ac80ba7145a2a1f29` in
-[lake-manifest.json](../lake-manifest.json). Standalone checkouts need no
-sibling-directory dependency or modifications to LeanLTL.
+The paper's supplementary software is the upstream
+[`vITP25` release](https://github.com/UCSCFormalMethods/LeanLTL/releases/tag/vITP25).
+LeanGuard depends on a fork pinned at revision
+`7514f6f035e4b8944299f02ac80ba7145a2a1f29` in
+[lake-manifest.json](../lake-manifest.json); a standalone checkout fetches it
+without any sibling directory or local changes to LeanLTL. `Formula.toLeanLTL`
+builds directly on LeanLTL's `TraceSet` library and never calls LeanGuard's own
+evaluator or its indexed `Holds` specification, so the correspondence proofs
+compare two independent definitions.
 
-## Representation and boundaries
+## How histories become traces
 
-`historyTrace [e₂, e₁]` is the finite LeanLTL trace with states
-`[[e₂, e₁], [e₁], []]`. Advancing this trace walks toward the past. A state carries
-the full remaining history because native atoms may inspect multiple events,
-aggregates, or the length of that history. This preserves arbitrary atom meanings,
-including their behavior on the empty history.
+LeanGuard histories are newest first, so time in the embedded trace runs toward
+the past. `historyTrace [e₂, e₁]` is the finite trace with states
+`[[e₂, e₁], [e₁], []]`: each state is the whole remaining history, because native
+atoms may look at several events, compute aggregates, or check the history's
+length. Keeping the full suffix lets an atom mean exactly what it meant natively,
+including on the empty history.
 
-LeanLTL traces are nonempty, so the final empty-history state makes the embedding
-total. `historyTrace_shift` proves that shifting by `i` gives exactly the trace of
-`h.drop i`, including the terminal state. Window predicates exclude empty histories,
-so that state never becomes a temporal witness. In particular, strong `previous`
-is false on both an empty history and a singleton, even when its operand is a
-negation that would be true on empty input. `once` and `since` are false on empty
-input; ordinary atoms and Boolean connectives retain their original meanings there.
+LeanLTL traces cannot be empty, and the final empty-history state is what makes
+the embedding total. `historyTrace_shift` proves that shifting the trace by `i`
+gives exactly the trace of `h.drop i`, terminal state included. Window predicates
+exclude the empty history, so that terminal state can never serve as a temporal
+witness. Concretely, strong `previous` is false on both an empty history and a
+singleton, even when its operand is a negation that would be true on empty input.
+`once` and `since` are false on empty input, while ordinary atoms and Boolean
+connectives keep their usual meaning there.
 
 | Native constructor | LeanLTL interpretation |
 |---|---|
@@ -38,39 +44,40 @@ input; ordinary atoms and Boolean connectives retain their original meanings the
 | `since w p q` | `p` until the window predicate conjoined with `q` |
 | `within scope p` | Satisfaction of `p` on the re-embedded projected history |
 
-Each temporal operator freezes its own current history as the metric origin before
-shifting. `InPastWindow` independently specifies non-future timestamps and inclusive
-age bounds; `inWindow_correct` proves the executable window test equivalent to it.
-No timestamp-order assumption is needed by the correspondence theorem. Even `none`
-rejects future witnesses. `since` checks its left operand strictly before the witness
-in this reverse-time trace, including intervening positions outside a witness's
-timestamp window if the supplied history is unordered.
+Each temporal operator records its current history as the origin for its window
+before shifting. `InPastWindow` specifies windows independently (no future
+timestamps, inclusive age bounds), and `inWindow_correct` proves the executable
+window test equivalent to it. The correspondence theorem makes no assumption about
+timestamp order, and even an unbounded `none` window rejects future witnesses.
+Because the trace runs backwards, `since` checks its left operand at every position
+strictly before the witness. If a supplied history is out of order, that includes
+positions whose timestamps fall outside the witness's window.
 
-Projection is explicit and re-anchors at the current head. Nested projections and
-windows therefore preserve the native semantics. These metric and scope operations
-extend LeanLTL's trace sets; they are not claimed to be ordinary propositional LTLf
-over individual events. LeanLTL's unfinished `LTLfMT` module is not imported.
+Projection is explicit and re-anchors at the current head, which is why nested
+projections and windows keep their native meaning. The metric and scope operators
+extend LeanLTL's trace sets, so the language as a whole is richer than ordinary
+propositional LTLf over individual events. LeanLTL's unfinished `LTLfMT` module is
+not imported.
 
-## Theorems and policy authoring
+## Theorems for policy authors
 
-`evaluate_leanLTL_correct` establishes, for every formula, atom interpretation, and
-history:
+The central result is `evaluate_leanLTL_correct`, which holds for every formula,
+atom interpretation and history:
 
 ```lean
 evaluate atom p h = true ↔ (historyTrace h ⊨ p.toLeanLTL atom)
 ```
 
-This is soundness and completeness over all histories. Adding a native formula
-constructor requires extending both the exhaustive translation and its induction
-proof before the default build can succeed. The existing
-indexed `Holds` specification remains available and is connected by
-`holds_iff_leanLTL`. `evaluate_eq_decide_leanLTL` identifies the native evaluator with
-a constructive decision procedure for embedded LeanLTL formulas. The runtime keeps
-its executable Boolean evaluator; LeanLTL supplies the independently connected
-semantics and proof library.
+This is soundness and completeness at once. Adding a native formula constructor
+means extending both the exhaustive translation and this induction proof, or the
+default build fails. `holds_iff_leanLTL` connects the indexed `Holds`
+specification to the same semantics, and `evaluate_eq_decide_leanLTL` shows the
+native evaluator is a constructive decision procedure for embedded LeanLTL
+formulas. The runtime still runs its own Boolean evaluator; LeanLTL provides the
+semantics and the proof library it is checked against.
 
-Policy authors can state concrete checks directly in LeanLTL and prove them with
-ordinary kernel reduction:
+You can state concrete checks in LeanLTL and prove them by ordinary kernel
+reduction:
 
 ```lean
 import LeanGuardProofs
@@ -86,47 +93,49 @@ example (atom : String → History → Bool) (p q : Formula String) (h : History
   evaluate_once_disj atom _ p q h
 ```
 
-`evaluate_once_disj` is obtained from LeanLTL's `finally_or_distrib` theorem and
-transported back to execution. `evaluate_of_leanLTL_imp` and
-`evaluate_eq_of_leanLTL_eq` support further implication and rewrite proofs.
-The theorem fixtures in `LeanGuard/TemporalTests.lean` use the verified decidability
-instance with `by decide`, including expiry, nested clocks, scoping, and revocation.
+The second example shows the pattern for reusing LeanLTL: `evaluate_once_disj`
+comes from LeanLTL's `finally_or_distrib` and is transported back to execution.
+`evaluate_of_leanLTL_imp` and `evaluate_eq_of_leanLTL_eq` do the same for your own
+implications and rewrites. The fixtures in `LeanGuard/TemporalTests.lean` use the
+verified decidability instance with `by decide` to cover expiry, nested clocks,
+scoping and revocation.
 
-`authorizationLeanLTL` expresses permit existence, every mandatory requirement, and
-the absence of applicable forbids with LeanLTL connectives and quantifiers.
-`authorize_leanLTL_correct` proves exact correspondence to native authorization.
-`PolicyPack.toLeanLTL` adds the error gate, and `decision_leanLTL_correct` proves an
-equivalence for the actual runtime allow bit. Exported theorems provide applicable
-requirement/forbid guarantees and a permit witness.
+The same approach extends from single formulas to whole policies.
+`authorizationLeanLTL` expresses "some permit holds, every applicable requirement
+holds, and no applicable forbid holds" with LeanLTL connectives and quantifiers,
+and `authorize_leanLTL_correct` proves it matches native authorization exactly.
+`PolicyPack.toLeanLTL` adds the error gate, and `decision_leanLTL_correct` proves
+equivalence with the allow bit the runtime actually returns. From there, exported
+theorems give you a permit witness and the requirement and forbid guarantees for
+any admitted call.
 
-`native_trace_leanLTL_safe` states this complete policy guarantee globally over
-finite or infinite traces of decision contexts. `replay_leanLTL_correct` connects
-the executable monitor fold to evaluation on the reversed observation sequence.
-Confirmation proofs expose prior LeanLTL witnesses, non-consumption, and metric
-expiry. `query_leanLTL_membership` proves that window-query membership is exactly
-eventual satisfaction of its event, action, basis, scope, and time predicate.
-Counts and sums remain native arithmetic over the selected history, preserving
-multiplicity; they are not presented as temporal operators supplied by LeanLTL.
+Several theorems connect these results to the runtime and to the guards:
 
-## Build and trust boundary
+- `native_trace_leanLTL_safe` states the complete policy guarantee globally, over
+  finite or infinite traces of decision contexts, as a safety implication.
+- `replay_leanLTL_correct` relates the executable monitor fold to evaluation on the
+  reversed sequence of observations.
+- The confirmation theorems expose a prior LeanLTL witness, non-consumption, and
+  the metric expiry window.
+- `query_leanLTL_membership` proves that window-query membership is exactly
+  eventual satisfaction of the query's event, action, basis, scope and time
+  predicate. Counts and sums over the selected events stay native arithmetic that
+  preserves multiplicity, and are not LeanLTL operators.
 
-`Temporal.lean` contains semantic definitions and imports LeanLTL's `TraceSet.Defs`.
-`TemporalProofs.lean`, `PolicyProofs.lean`, and `QueryProofs.lean` use the larger
-LeanLTL proof library. This keeps the full mathlib proof-library imports out of
-the executable's dependency path while checking all correspondence proofs in the
-default build.
+## Build layout and axiom audit
 
-`lake build` includes `LeanGuardAudit`, which checks transitive axiom dependencies
-of every public `LeanGuard` declaration in the imported library and theorem fixtures.
-Only `propext`, `Classical.choice`, and `Quot.sound` are allowed. A `sorryAx`,
-a compiler-trusting axiom generated by `native_decide`, or a custom axiom fails
-the build.
-`Audit.lean` also prints the dependencies of the named safety theorems, and
+`Temporal.lean` holds the semantic definitions and imports only LeanLTL's
+`TraceSet.Defs`. The heavier proof library is used by `TemporalProofs.lean`,
+`PolicyProofs.lean` and `QueryProofs.lean`. That split keeps mathlib's proof
+imports out of the executable's dependency path while every correspondence proof
+is still checked in the default build.
+
+`lake build` also builds `LeanGuardAudit`, which follows the axiom dependencies of
+every public `LeanGuard` declaration in the library and theorem fixtures. Only
+`propext`, `Classical.choice` and `Quot.sound` are allowed, so a `sorryAx`, the
+compiler-trusting axiom that `native_decide` introduces, or a custom axiom fails
+the build. `Audit.lean` prints the dependencies of the named safety theorems, and
 `scripts/verify.py` checks that every requested report is present.
 
-These theorems cover the formal, finite-history policy evaluator and its Lean
-decision functions. They do not establish the fidelity of every English policy,
-Python execution, timestamp authenticity, or the external host's event stream.
-The infinite-context theorem is a global safety implication, not a decision
-procedure for arbitrary infinite-trace properties or a liveness guarantee. See
-[the guarantee boundary](guarantees.md).
+The [guarantee boundary](guarantees.md) lists what these proofs assume about the
+English policy, the Python host, timestamps and the host's event stream.

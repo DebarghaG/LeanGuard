@@ -1,6 +1,6 @@
-"""Article trace fixtures. Every policy verdict is computed by the Lean executable.
+"""Trace fixtures from the Dogwood introduction, checked by the Lean executable.
 
-The unsafe response-only fixture is a negative control, not an enforcement option.
+The unsafe response-only policy is a negative control; never deploy it.
 """
 
 import json

@@ -4,7 +4,7 @@ import LeanGuard.VerifiedPolicy
 namespace LeanGuard
 open Lean
 
-/-- Trusted compiled registry; never accept policy code from the acting agent. -/
+/-- Serves the JSON-lines protocol on stdin/stdout for packs found by `resolve`. -/
 def serveRegistry (resolve : String → Except String PolicyPack)
     (properties : List (String × String) := []) : IO Unit := do
   let input ← IO.getStdin
@@ -29,12 +29,13 @@ def serveRegistry (resolve : String → Except String PolicyPack)
       output.putStrLn (Json.mkObj [("ok", toJson false), ("error", toJson error)]).compress
     output.flush
 
-/-- Serve one custom pack without importing LeanGuard's built-in domains. -/
+/-- Serves a single pack. The built-in domains aren't linked in. -/
 def serve (pack : PolicyPack) : IO Unit :=
   serveRegistry fun name ↦
     if name == pack.name then .ok pack else .error s!"unknown policy pack: {name}"
 
-/-- Proofs are checked at build time and erased from the runtime executable. -/
+/-- Serves a verified pack and reports its property in the manifest. The proof is checked
+when this is compiled; the binary carries no proof. -/
 def serveVerified (policy : VerifiedPolicy) : IO Unit :=
   serveRegistry (fun name ↦
     if name == policy.pack.name then .ok policy.pack else .error s!"unknown policy pack: {name}")

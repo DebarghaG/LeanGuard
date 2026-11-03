@@ -1,4 +1,7 @@
-"""Read published rollout data as data; never execute embedded code or task verifiers."""
+"""Download and normalize published rollout datasets.
+
+Embedded code and task verifiers are never executed.
+"""
 
 from __future__ import annotations
 

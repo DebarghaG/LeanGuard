@@ -27,6 +27,10 @@ class TraceEvent(TypedDict):
     resource: str
     binding: str
     amount: int
+    actor: NotRequired[str]
+    workflow: NotRequired[str]
+    delegation: NotRequired[str]
+    peer: NotRequired[str]
     input: NotRequired[dict]
     output: NotRequired[Any]
     facts: NotRequired[dict]

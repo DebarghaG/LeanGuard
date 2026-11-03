@@ -1,4 +1,7 @@
-"""Instrumented local rollout controls, distinct from native policy enforcement."""
+"""Protocol and customer-simulator controls for local rollouts.
+
+Policy enforcement itself happens in GuardHost.
+"""
 
 from __future__ import annotations
 
@@ -87,7 +90,7 @@ def denial_feedback(decision, detailed):
 
 
 def recovery_summary(calls, messages):
-    """Observed admission recovery, not independent proof of semantic correctness."""
+    """Summarize whether denied calls were later admitted. That alone doesn't show the repair was right."""
     positions = {
         t.id: i for i, m in enumerate(messages) for t in getattr(m, "tool_calls", None) or []
     }
@@ -201,10 +204,10 @@ class ReliableAgent(LLMAgent):
 
 
 def customer_reason(content, previous=""):
-    """Preserve stated reasons; only explicit covered categories enable insurance.
+    """Map a stated reason to a covered insurance category when it plainly is one.
 
-    This recognizer is not a general language-understanding guarantee. Unclassified
-    explanations remain verbatim evidence, never health/weather eligibility.
+    Matching is deliberately narrow. Anything unclassified stays verbatim and never
+    counts as a health or weather reason.
     """
     lower = content.lower().replace("’", "'")
     choices = [
@@ -243,7 +246,7 @@ def customer_reason(content, previous=""):
 
 
 def observe_simulator_travel(host):
-    """Benchmark-only trusted sensor: live simulator state, never task solutions or agent claims."""
+    """Benchmark stand-in for a trusted sensor. Reads live simulator state only."""
     adapter = host.adapter
     if adapter.domain != "telecom" or not host.customer():
         return

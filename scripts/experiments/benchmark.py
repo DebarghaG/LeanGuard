@@ -1,4 +1,7 @@
-"""Local-only, paired τ-bench experiments; never exposes task solutions to the agent."""
+"""Paired baseline and guarded τ-bench runs against a local model.
+
+The agent never sees task solutions.
+"""
 
 from __future__ import annotations
 
@@ -87,7 +90,7 @@ def select_tasks(tasks_by_domain, *, seed, tasks_per_domain=10, total_tasks=None
 
 
 def generation_usage(records):
-    """Count every returned generation, including rejected/retried messages."""
+    """Count every returned generation, including rejected and retried ones."""
     messages = [r["message"] for r in records]
     return {
         **{
@@ -107,10 +110,10 @@ def generation_usage(records):
 
 
 def executed_trajectory(messages, blocked_ids):
-    """The stock evaluator re-executes mutations, so omit only undispatched calls.
+    """The stock evaluator re-executes mutations, so drop only calls never dispatched.
 
-    Keep the complete conversation separately. In particular, do not remove calls
-    that dispatched and then failed: their effects may be unknown.
+    Keep the full conversation separately. Calls that dispatched and then failed
+    stay in, because their effects are unknown.
     """
     from tau2.data_model.message import AssistantMessage, ToolMessage
 
@@ -134,7 +137,7 @@ def executed_trajectory(messages, blocked_ids):
 
 
 def confirmation_context(messages, events):
-    """Visible dialogue and completed host outcomes; no reasoning or scoring data."""
+    """What the simulated confirmation sees: visible dialogue and completed outcomes only."""
     return {
         "dialogue": [
             {"role": m.role, "content": m.content}
@@ -182,7 +185,7 @@ def confirmation_effect(details):
 
 
 class SimulatedConfirmation:
-    """Benchmark-only replacement for the trusted user UI, not a verified component.
+    """Simulated confirmation UI for benchmarks. A model decides, so it is untrusted.
 
     The customer model sees visible dialogue, completed host outcomes and the
     canonical proposal, never expected actions or scoring assertions.
@@ -357,10 +360,10 @@ class RecordingGuard(GuardedEnvironment):
 
 
 def observe_customer(host, confirmation, message):
-    """Only literal customer messages supply identity; no hidden task extraction.
+    """Take identity and intent evidence from literal customer messages only.
 
-    Intent recognition here is deliberately narrow and unverified. Missing evidence
-    denies the relevant native rule instead of being invented from a gold solution.
+    Matching is deliberately narrow. When evidence is missing the relevant rule
+    denies; nothing is filled in from the task solution.
     """
     if message.role != "user" or not message.content or message.is_tool_call():
         return
@@ -375,8 +378,8 @@ def observe_customer(host, confirmation, message):
         ]
         if len(matches) == 1:
             host.observe_trusted("identity", matches[0])
-    # Preserve raw, user-originated reasons; only explicit health/weather words map
-    # to the enumerated insurance categories. This is not language-understanding proof.
+    # Keep the customer's reason verbatim. Only explicit health or weather words map
+    # to the insurance categories.
     if adapter.domain == "airline":
         adapter.user_evidence["cancellation_reason"] = customer_reason(
             content, adapter.user_evidence.get("cancellation_reason", "")
@@ -491,7 +494,7 @@ def score_run(run, task, environment, blocked_ids, options):
 
 
 class RecordingEnvironment:
-    """Common observation layer; baseline tools remain unguarded."""
+    """Records tool traffic for every arm. Baseline tools are not guarded."""
 
     def __init__(self, environment, directory, stop_check=None):
         self.environment, self.directory = environment, directory
@@ -545,7 +548,7 @@ class RecordingEnvironment:
         return reply
 
 
-def run_episode(task, options, directory, stop_event=None):
+def run_episode(task, options, directory, stop_event=None, *, guard_factory=RecordingGuard):
     from tau2.orchestrator.orchestrator import Orchestrator
     from tau2.runner.build import build_environment, build_user
     from tau2.utils.llm_utils import set_llm_log_dir, set_llm_log_mode
@@ -605,7 +608,7 @@ def run_episode(task, options, directory, stop_event=None):
                 options["seed"],
                 context=lambda: confirmation_context(orchestrator.trajectory, host.events()),
             )
-            guarded = RecordingGuard(host, confirmation, detailed=options["mode"] == "guarded")
+            guarded = guard_factory(host, confirmation, detailed=options["mode"] == "guarded")
             active_environment = guarded
             observer = lambda reply: observe_customer(host, confirmation, reply)
         recording = RecordingEnvironment(active_environment, directory, stop_check=stop_check)

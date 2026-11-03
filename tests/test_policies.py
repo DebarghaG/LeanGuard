@@ -1,4 +1,4 @@
-"""Native predicate tests use Lean's read-only audit interface, not a Python evaluator."""
+"""Domain predicate tests, evaluated by Lean through the read-only audit call."""
 
 from copy import deepcopy
 

@@ -12,7 +12,7 @@ def EventBasis.kind : EventBasis → String
   | .dispatches => "dispatch"
   | .successes => "success"
 
-/-- A typed projection of historical tool data; decoding failures remain explicit. -/
+/-- Reads a typed value from a past event's input or output. Decoding failures are errors. -/
 structure EventField (α : Type) where
   read : Event → Except String α
 
@@ -77,7 +77,7 @@ theorem query_window (q : WindowQuery) (c : Context) (e : Event) (h : e ∈ q.ev
   simp only [WindowQuery.matches, Bool.and_eq_true, decide_eq_true_eq] at matched
   exact ⟨matched.1.2, matched.2⟩
 
-/-- A query witness at a LeanLTL state, with the query's request clock frozen. -/
+/-- The event at this LeanLTL state matches the query, timed from the original request. -/
 def WindowQuery.witnessLeanLTL (q : WindowQuery) (request e : Event) : LeanLTL.TraceSet History :=
   (LeanLTL.TraceSet.of fun suffix ↦ suffix.head? = some e ∧
     historyKey q.scope e = historyKey q.scope request ∧

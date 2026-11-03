@@ -33,7 +33,7 @@ def default_binary() -> Path:
 
 
 class Engine:
-    """One serialized, bounded JSON channel to a compiled native Lean policy pack."""
+    """Client for a compiled Lean policy executable. Requests are sent one at a time."""
 
     def __init__(self, domain: str, binary: Path | None = None, timeout: float = 10):
         self.binary = (binary or default_binary()).resolve()

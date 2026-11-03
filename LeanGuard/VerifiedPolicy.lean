@@ -2,9 +2,8 @@ import LeanGuard.Policy
 
 namespace LeanGuard
 
-/-- A policy and its explicitly stated, admission-conditional safety contract.
-The contract still needs review; a vacuous specification is also provable.
-Audit this declaration and its dependencies before distributing the executable. -/
+/-- A pack together with a proof that every call it allows satisfies `Safe`. Read `Safe`
+carefully: a weak property, or a pack that denies everything, also type-checks. -/
 structure VerifiedPolicy where
   pack : PolicyPack
   property : String
