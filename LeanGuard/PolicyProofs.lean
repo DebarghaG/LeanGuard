@@ -3,8 +3,9 @@ import LeanGuard.TemporalProofs
 
 namespace LeanGuard
 
-/-- Independent error semantics: every Boolean branch, but only temporally relevant
-positions. A since witness requires its right operand and all intervening left operands. -/
+/-- When a formula evaluates without errors, specified separately from the evaluator. Both
+sides of every connective are checked, but only at positions the operator reaches. For
+`since`, that is the witness and every position between it and now. -/
 def ErrorFree (ctx : Context) : Formula Check → History → Prop
   | .atom a, h => ∃ value, a.run { ctx with history := h } = .ok value
   | .top, _ | .bot, _ => True
@@ -26,7 +27,7 @@ theorem evaluationErrors_eq_nil_iff (ctx : Context) (p : Formula Check) (h : His
   | _ => simp_all [evaluationErrors, ErrorFree, List.flatMap_eq_nil_iff,
       List.mem_range, ← inWindow_correct]
 
-/-- The runtime decision is both sound and complete for its LeanLTL policy meaning. -/
+/-- The runtime allows a call exactly when the context satisfies the pack's LeanLTL meaning. -/
 theorem decision_leanLTL_correct (pack : PolicyPack) (ctx : Context) :
     (decidePolicy pack ctx).allow = true ↔
       (historyTrace ctx.history ⊨ pack.toLeanLTL ctx) := by

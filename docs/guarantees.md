@@ -1,6 +1,14 @@
-# Guarantee boundary
+# What LeanGuard guarantees
 
-## Kernel-checked statements
+LeanGuard's claims come in three layers, and it helps to keep them apart. Some
+things are proved in Lean and checked by the kernel. Some are enforced by the
+Python host at runtime, by code that is tested but not proved. And some are
+assumptions about your deployment that nothing in this repository can check.
+This page goes through each in turn.
+
+## Proved in Lean
+
+These theorems are about the functions the runtime actually executes.
 
 | Statement | What it establishes |
 |---|---|
@@ -33,48 +41,64 @@
 | `billRecorded_identity`, `recordedBills_witness` | A bill-list witness is an actual returned bill with matching bill/customer IDs |
 | `external_cannot_override` | Optional external approval cannot override a native denial |
 
-The default `LeanGuardAudit` build target audits transitive axiom dependencies of
-all public LeanGuard declarations in the imported library and theorem regressions.
-Downstream packages can use `LeanGuard.Audit.check` with their own declaration roots
-and namespaces. `VerifiedPolicy.sound` connects a specific executable pack to its
-author's stated safety proposition; meaningful specification and adapter fidelity
-remain separate review obligations. The compiled server does not independently
-check a proof certificate for each request.
-The audit explicitly includes the live runtime and offline replay entry points.
-`Audit.lean` also lists exported safety theorems for `#print axioms`, and the
-verification script requires every report. Only Lean's standard `propext`,
-`Classical.choice`, and `Quot.sound` are accepted. No `sorry`, `native_decide` axiom,
-or custom axiom is needed. The unfinished vendored `LTLfMT` module is not imported.
-See [the representation and correspondence details](leanltl.md).
+### How the proofs are checked
 
-The generic authorization theorem is conditional on the predicates' meanings. Except
-for the separate cancellation statement, it does not independently prove that every
-domain predicate faithfully captures its English source. Predicate tests and the
-coverage registry supplement, but do not replace, that obligation.
+The default build includes `LeanGuardAudit`, which walks the transitive axiom
+dependencies of every public LeanGuard declaration, the theorem regression files,
+and the live runtime and offline replay entry points. The only axioms allowed are
+Lean's standard `propext`, `Classical.choice` and `Quot.sound`, so a `sorry`, the
+axiom that `native_decide` introduces, or any custom axiom fails the build. The
+vendored LeanLTL module `LTLfMT` is unfinished, and LeanGuard doesn't import it.
+`Audit.lean` also prints `#print axioms` reports for the exported safety theorems,
+and `scripts/verify.py` fails if any report is missing.
 
-`native_trace_safe` quantifies over contexts carrying their own histories. It is not
-a theorem that arbitrary supplied histories are authentic or consistent with prior
-contexts, nor a proved state-machine refinement of Python execution. Finite-prefix
-admission can enforce safety; it cannot guarantee eventual task completion, truthful
-free-form messages, refunds arriving days later, or a user eventually responding.
+Downstream packages run the same audit over their own code with
+`LeanGuard.Audit.check`, giving it their declaration roots and namespaces. If you
+use `serveVerified`, `VerifiedPolicy.sound` ties the executable pack you ship to
+the safety property you stated. Whether that property says anything useful, and
+whether your adapter feeds it honest data, are questions for review; the compiled
+server doesn't recheck a proof on each request. The
+[LeanLTL guide](leanltl.md) covers how traces are represented and how the
+correspondence proofs work.
 
-Consent must constrain the acting model independently. For example, approval to
-buy a purple shirt for a specified charge cannot authorize the model to substitute
-a black shirt or a larger charge. The host binds approval to exact arguments and
-the state revision; the native temporal guard checks the matching, unconsumed,
-unrevoked witness. An acting model's claim that the customer approved is not such
-a witness.
+### Where the proofs stop
 
-The benchmark's separate confirmation model is an **unverified consent authority**.
-If it mistakenly issues a fresh approval for the wrong shirt, the existing formula
-cannot distinguish that mistake from a real customer's approval of the new proposal.
-Better prompts, presentation, or model reasoning do not prove this boundary sound.
-End-to-end consent soundness requires independently authorized structured consent
-and enforcement that the proposed effects stay within it. Converting arbitrary
-dialogue into that consent remains an additional obligation; the current theorems
-must not be described as proving that a model understands natural-language consent.
+The authorization theorems hold whatever the domain predicates mean. They don't
+show that a predicate like "this order is eligible for cancellation" matches the
+English policy it was written from; the airline cancellation rule is the one
+exception with its own correctness theorem. For the rest, predicate tests and the
+[coverage notes](coverage.md) are evidence, not proof.
 
-## Enforcement protocol
+`native_trace_safe` is about contexts that carry their own histories. It doesn't
+say those histories are genuine, that they agree with earlier contexts, or that
+the Python host's behaviour refines the Lean model.
+
+And admission checks can only enforce safety: something bad never happens. They
+can't make something good happen eventually, so LeanGuard can't promise that a
+task finishes, that the agent's free-text replies are true, that a refund arrives
+days later, or that the user ever answers.
+
+### Consent
+
+Approval exists to constrain what the agent does. If a
+customer approves buying a purple shirt for a stated price, that approval must not
+let the agent buy a black shirt, or charge more. The host binds each approval to
+the exact arguments and the backend revision, and the Lean guard requires a
+matching approval that hasn't been used or revoked. The agent saying "the customer
+approved" counts for nothing.
+
+The weak point is whoever produces the approval. In the benchmark experiments a
+second model plays the customer's approval screen, and that model is an
+unverified consent authority. If it approves the black shirt by mistake, the
+formula has no way to tell that from a real customer approving a new proposal,
+and no amount of prompting fixes this. End-to-end consent needs approval that is
+structured and independently authorized, plus enforcement that the call stays
+within it. Turning free-form dialogue into that kind of approval is a separate
+problem, and nothing here proves that a model understands what a user agreed to.
+
+## Enforced by the host
+
+Every call goes through the same sequence:
 
 ```text
 original tool proposal
@@ -86,61 +110,82 @@ original tool proposal
   → record success or unknown outcome before returning
 ```
 
-No tool runs on a native denial, schema/adapter error, timeout, or failed admission
-journal write. The engine's version is checked on every command. Requests and outcomes
-are correlated by IDs, event identity, normalized inputs, and amount; duplicate
-requests/outcomes are rejected. The existing `confirmed` guard consumes confirmation
-at dispatch, not on successful completion. The Dogwood article packs instead use
-reusable response approvals to preserve the article's semantics.
-The native monitor retains authoritative admission facts on the request and dispatch,
-then copies the matching dispatch's snapshot onto its validated outcome. Claimed
-facts in an outcome cannot replace that snapshot. Journal replay reconstructs it
-from the original admission commands.
+The tool doesn't run if Lean denies the call, if the schema or adapter reports an
+error, if the engine times out, or if writing the decision to the journal fails.
+The host checks the engine's version on every command. Requests and outcomes are
+matched by ID, event identity, normalized inputs and amount, and duplicates are
+rejected.
 
-The journal is single-writer, uses SQLite WAL with `synchronous=FULL`, and pins the
-principal, domain, and compiled engine hash. A restart replays monitor commands and
-compares every decision without executing tools. Failure after a durable reservation
-but before a durable outcome leaves an unresolved dispatch; retries remain blocked.
-Failed recovery closes the native channel until a complete replay succeeds. Shutdown
-waits for the active tool and outcome recording before releasing the journal lock.
-The implementation does not claim exactly-once effects or automatically reconcile
-unknown outcomes. That needs a backend idempotency/reconciliation protocol.
+When Lean admits a call it records the authoritative facts from the snapshot on
+the request and on the dispatch. The matching outcome inherits those facts from
+the dispatch, so a tool result can't overwrite them with claims of its own, and
+journal replay rebuilds them from the original commands. The built-in `confirmed`
+guard uses up an approval when the call is dispatched, whether or not it later
+succeeds. The Dogwood article packs instead use reusable approval responses,
+because that is what the article describes.
 
-The `dogwood.*` example packs are individually selectable demonstrations, not additional
-rules automatically applied to the benchmark packs. Unlike those packs, they do not
-include the single-flight guard: the native monitor can admit multiple calls before
-outcomes arrive and enforce the request-based budget. The Python host still serializes
-its execution path. The deliberately unsafe response-only example is available only
-to `leanguard-conformance`, a read-only executable with no tool dispatch capability.
+### The journal
 
-The offline runner accepts trace fragments starting with responses because the article
-omits their earlier requests. This does not bypass live `validateOutcome`: unmatched
-or altered outcomes remain errors in the live engine. Article fixtures and replay
-results are tests, not a proof of equivalence between Lean and every Dogwood policy.
+Each journal has a single writer. It uses SQLite in WAL mode with
+`synchronous=FULL`, and it is pinned to one principal, one domain and the hash of
+one compiled engine. On restart the host replays the recorded commands and checks
+that every decision comes out the same, without running any tools. If replay
+fails, the engine channel stays closed until a full replay succeeds. On shutdown
+the host waits for the running tool to finish and its outcome to be recorded
+before releasing the journal lock.
 
-## Trusted computing base
+If the process dies after a dispatch is recorded but before its outcome is, that
+dispatch stays unresolved and blocks retries. LeanGuard doesn't promise
+exactly-once effects and doesn't reconcile unknown outcomes on its own; that
+needs an idempotency or reconciliation protocol with your backend.
 
-- The host's code and operating environment, including its identity assignment,
-  nondecreasing clock, canonicalization, process transport, and journal management.
-  Assistant/user requestor roles must come from the trusted orchestrator, not model output.
-- The adapter's faithful extraction of authoritative facts and exact units, and a lock
-  or equivalent transaction mechanism respected by **all** environment writers.
-- A genuine user-facing confirmation channel that faithfully presents the proposal.
-  Trusted intent labels, such as insurance reasons, are assumptions about user input,
-  not verified facts about the world.
-- Complete interception: the agent must have neither backend credentials nor a second
-  unguarded tool endpoint, local journal access, or the native engine's control channel.
-  A Python object proxy is not an operating-system sandbox.
-- The pinned compiled policy, Lean compiler/runtime, Python and dependencies, SQLite,
-  and filesystem durability/access controls. Journals contain sensitive raw facts,
-  proposals, and outcomes and need a private directory and an explicit retention policy.
+### The Dogwood example packs
 
-Separate journals for the same principal/resource do not share quotas or one-shot
-history. Production deployments need one authoritative coordination domain, not a
-new empty journal per conversation. A changed backend must not be paired silently
-with an old journal; backend recovery is the integrator's responsibility.
+The `dogwood.*` packs demonstrate the examples from the Dogwood article. You
+select them explicitly; they are never added to the benchmark packs. They also
+leave out the single-flight guard, so the Lean monitor can admit several calls
+before their outcomes arrive and enforce a budget counted over requests. The
+Python host still runs those calls one at a time. The one deliberately unsafe
+example, which accepts responses alone, is compiled only into
+`leanguard-conformance`, a read-only executable that can't dispatch tools.
 
-OPA is not integrated. The proved Boolean conjunction is a future composition rule,
-not a proof of OPA, an HTTP adapter, or Rego policy equivalence. Any future adapter must
-fail closed on undefined/missing/error results, bind to the same state revision, and
-only restrict native authorization.
+The article shows trace fragments that begin with responses whose requests
+aren't included, so the offline runner accepts that shape. The live engine
+doesn't: `validateOutcome` still rejects an outcome that doesn't match a
+dispatch. The article fixtures are tests, and agreeing with them doesn't make
+LeanGuard equivalent to Dogwood in general.
+
+## What you have to trust
+
+- The host and its environment. That includes how it assigns identities, a
+  clock that never goes backwards, argument canonicalization, the process
+  transport and the journal. Whether a message came from the assistant or the
+  user must be decided by your orchestrator, never by model output.
+- The adapter. It must extract authoritative facts with exact units, and it
+  must provide a lock or transaction that every writer to the backend respects.
+- The approval screen. It must show the user the actual proposal. Labels the
+  user supplies, such as the reason for an insurance claim, are taken as given;
+  LeanGuard doesn't check them against the world.
+- Complete interception. The agent must not hold backend credentials, a
+  second unguarded way to reach the tools, access to the journal, or the engine's
+  control channel. A Python proxy object is no substitute for an operating-system
+  sandbox.
+- The toolchain. The pinned compiled policy, the Lean compiler and runtime,
+  Python and its dependencies, SQLite, and the filesystem's durability and access
+  controls. Journals hold sensitive raw facts, proposals and outcomes, so keep
+  them in a private directory and decide how long to retain them.
+
+Quotas and one-time rules only work within a journal. Two journals for the same
+principal and resource don't see each other's history, so a production
+deployment needs one authoritative journal per coordination domain rather than a
+fresh one per conversation. Likewise, don't pair a changed backend with an old
+journal; restoring the backend after a failure is the integrator's job.
+
+## Open Policy Agent
+
+OPA isn't integrated. Lean proves that combining the native decision with an
+external one by conjunction can only restrict what the native policy allows
+(`external_cannot_override`), but there is no OPA adapter, HTTP client or Rego
+equivalence proof. A future adapter would have to deny on undefined, missing or
+error results, bind to the same backend revision, and only ever narrow the native
+decision.

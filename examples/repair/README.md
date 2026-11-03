@@ -1,8 +1,14 @@
 # Suggesting repairs with Lean
 
-`guard_repair?` finds a permitted, policy-compliant edit among candidates you supply
-and prints a Lean proof that an agent can reuse. It is an experimental proof-authoring
-tool; call execution still goes through the normal LeanGuard host.
+When LeanGuard denies a call, an agent often wants to know whether a slightly
+different call would go through. Maybe a smaller amount, maybe a different payload.
+`guard_repair?` answers that question for a list of candidate edits you supply. It
+picks the first candidate it can prove both allowed by the policy and acceptable to
+the user, and prints the Lean proof so it can be reused.
+
+This is an experimental tool for writing proofs. It never dispatches anything: a
+repaired call still has to go through the normal LeanGuard host and pass admission
+there.
 
 Run the [examples](Examples.lean) from the repository root:
 
@@ -13,9 +19,10 @@ lake env lean examples/repair/Examples.lean
 
 ## Define the permitted change
 
-State both the user's intent and policy compliance in an existential goal. In this
-example, the task permits reducing a positive spend. The account has already spent
-60 of its 100-unit budget, and the proposed amount is 70:
+You write the repair as an existential goal that says two things: which edits the
+user would accept, and that the policy allows the edited call. In this example the
+user is fine with any smaller positive spend. The account has already spent 60 of a
+100-unit budget, and the agent proposed 70:
 
 ```lean
 theorem budget_repair : ∃ amount : Nat, 0 < amount ∧ amount ≤ 70 ∧
@@ -23,24 +30,26 @@ theorem budget_repair : ∃ amount : Nat, 0 < amount ∧ amount ≤ 70 ∧
   guard_repair? [70, 50, 0, 40]
 ```
 
-The tactic selects 40 and suggests `exact ⟨40, by guard_solve⟩`. `amountContext` updates
-the proposed amount and its encoding while preserving trusted facts and past events.
-The definitions are in [Examples.lean](Examples.lean).
+70 and 50 blow the budget and 0 isn't positive, so the tactic picks 40 and suggests
+`exact ⟨40, by guard_solve⟩`. `amountContext` (defined in
+[Examples.lean](Examples.lean)) changes only the proposed amount and its encoding;
+trusted facts and past events stay as they were.
 
-Order candidates by preference; the first proved candidate wins. Supply at most 32.
-A failed search means none of those candidates was proved, not that repair is
-impossible. If the user requires an exact amount, encode that requirement instead
-of allowing a reduction.
+List candidates in order of preference, since the first one proved wins, and supply
+at most 32 of them. If none can be proved, that tells you about those candidates
+only; a different candidate might still work. If the user needs an exact amount,
+write `amount = 70` into the goal instead of allowing a reduction.
 
-The default discharger, `guard_solve`, first uses an existing hypothesis, then computes
-closed obligations with `decide` and uses grind's engine for symbolic reasoning.
-Explicit conjunctions can be handled separately, so an edit restriction can use
-arithmetic while a concrete policy check uses computation. If that fails, the solver
-retries the whole conjunction so rules can match terms across its conjuncts.
-The engine combines equality reasoning, theorem instantiation,
-arithmetic, order, and case splitting in one shared state per symbolic obligation.
+The default discharger, `guard_solve`, starts with the cheap options. It looks for a
+hypothesis that already proves the goal, then evaluates closed obligations with
+`decide`, and hands anything symbolic to grind's engine. It splits explicit
+conjunctions so that an edit restriction can be solved with arithmetic while a
+concrete policy check is computed. If the split fails, it retries the whole
+conjunction so that rules can match terms on both sides. Within a symbolic
+obligation, equality reasoning, theorem instantiation, arithmetic, order and case
+splitting all share one engine state.
 
-Use `using` to supply a different discharger (import its tactics as needed):
+To use a different discharger, add `using` (and import whatever tactics it needs):
 
 ```lean
 theorem remaining_budget (spent cap proposed : Nat)
@@ -51,46 +60,51 @@ theorem remaining_budget (spent cap proposed : Nat)
 
 ## Register policy knowledge
 
-Policy authors can register proved characterizations with `@[guard_rule =]` and
-forward implications with `@[guard_rule →]`. These use grind's actual theorem
-database, pattern inference, and scoping. `attribute [local guard_rule ...]` keeps a
-rule local to a section. The default solver uses this database and grind's small
-`lia` theorem set; it does not load the full global `@[grind]` theorem set.
+Unfolding a policy for every symbolic candidate is slow. If you prove once what your
+policy means in simpler terms, the solver can use that instead. Register a proved
+characterization with `@[guard_rule =]`, or a forward implication with
+`@[guard_rule →]`. These go into grind's own theorem database, with its pattern
+inference and scoping, and `attribute [local guard_rule ...]` keeps a rule local to a
+section. `guard_solve` uses this database plus grind's small `lia` arithmetic theorem
+set. It does not load the global `@[grind]` set.
 
 The [grind examples](Grind.lean) prove a characterization of a native spending policy
-once, then automatically repair symbolic amounts while preserving the **full** allow
-predicate. They also demonstrate equality propagation, local rule scoping, the
-runtime/LeanLTL bridge, explicit hints, failure rollback, and proof replay.
+once, then repair symbolic amounts while keeping the full allow predicate in the goal.
+They also cover equality propagation, locally scoped rules, the bridge between the
+runtime decision and LeanLTL, explicit hints, rollback after failure, and proof replay.
 
-Pass one-off lemmas using grind's parameter syntax:
+For a one-off lemma, pass it with grind's parameter syntax:
 
 ```lean
 guard_solve (splits := 0) [policy_characterization]
 guard_repair? (splits := 0) [proposed, cap - spent] with [policy_characterization]
 ```
 
-Here `policy_characterization` stands for your proved theorem; it is not a built-in
-declaration. Directional hints such as `→ my_lemma` and local proof terms use grind's
-parameter elaborator. When using a custom `using` discharger, put its hints and
-configuration inside that discharger instead.
+`policy_characterization` stands in for a theorem you've proved; there's no built-in
+declaration by that name. Directional hints such as `→ my_lemma` and local proof
+terms go through grind's parameter elaborator. With a custom `using` discharger, put
+hints and configuration inside that discharger.
 
-Defaults are four splits, three E-matching rounds per split phase, generation six
-(including local theorems), and 256 instances per branch. Override those with ordinary
-grind configuration fields. Lean's heartbeat and recursion limits remain in force.
-An uncaught resource exception aborts search; grind can also return resource exhaustion
-as a failed obligation with diagnostics. Proof-trace admission and `useSorry` are
-always disabled. Every accepted proof is checked against its goal, with unresolved
-metavariables, reported errors, and transitive `sorry` dependencies rejected. This
-includes the types and values of used local declarations.
+The search limits default to 4 splits, 3 E-matching rounds per split phase,
+generation 6 (local theorems included) and 256 instances per branch. Override them
+with the usual grind configuration fields; Lean's heartbeat and recursion limits
+apply as normal. An uncaught resource exception aborts the whole search, while grind
+can also report resource exhaustion as an ordinary failed obligation with
+diagnostics.
 
-On failure, each candidate retains the failed obligation or discharger error. Enable
-`set_option trace.guard.repair true` to see unsuccessful attempts even when a later
-candidate succeeds. Failure remains inconclusive: these diagnostics do not prove
-that a candidate is forbidden or that no repair exists.
+Every accepted proof is checked against its goal. Proof-trace admission and
+`useSorry` are always off, and a proof is rejected if it leaves unresolved
+metavariables, reports an error, or depends on `sorry` anywhere, including through
+the types and values of local declarations it uses.
 
-Read [the source investigation](../../docs/grind.md) for the engine architecture,
-exact reuse points, version differences, and extension boundaries. Run the new cases
-with:
+When a candidate fails, its failed obligation or discharger error is kept. Turn on
+`set_option trace.guard.repair true` to see failed attempts even when a later
+candidate succeeds. These diagnostics explain why a proof didn't go through; they
+don't show that the candidate is forbidden.
+
+[How the repair experiment uses grind](../../docs/grind.md) covers the engine's
+architecture, exactly which parts are reused, version differences, and where
+extension stops. Run the grind regression cases with:
 
 ```sh
 lake build LeanGuard.Experimental.TemporalRepair
@@ -100,22 +114,24 @@ lake env lean examples/repair/Adversarial.lean
 
 ## Explain a denial
 
-`#guard_explain pack context` prints the decision, blocked rule descriptions, and
-check names. An agent can use this to identify a required read or confirmation.
-Descriptions are guidance; a suggested action still needs admission against a
-fresh authoritative snapshot.
+`#guard_explain pack context` prints the decision along with the descriptions and
+check names of the rules that blocked it. An agent can use that to see what's
+missing, such as a read it should do first or a confirmation it needs. The
+descriptions are the policy author's guidance, so whatever the agent does next
+still has to pass admission against a fresh snapshot.
 
-Give agents structured candidate arguments alongside the explanation. If an agent
-rewrites those arguments, validate the resulting call and check admission again.
+Give the agent structured candidate arguments alongside the explanation. If it
+rewrites those arguments, validate the new call and check admission again.
 
-Keep trusted identity, facts, approval evidence, and past events fixed. A proof of
-policy compliance establishes only the intent restrictions written in the goal.
-Missing observations or approval must come from the host's trusted flows.
+Repair can only change the call. Trusted identity, facts, approval evidence and
+history stay fixed, and a missing observation or approval has to come from the
+host's trusted flows. The proof covers the intent restrictions you wrote in the
+goal and nothing more.
 
 ## Use LeanLTL policy goals
 
-Import `LeanGuard.Experimental.TemporalRepair` to state compliance directly as
-LeanLTL satisfaction:
+You can also state compliance as LeanLTL satisfaction by importing
+`LeanGuard.Experimental.TemporalRepair`:
 
 ```lean
 import LeanGuard.Experimental.TemporalRepair
@@ -129,23 +145,22 @@ example (pack : PolicyPack) (context : α → Context) (allowedEdit : α → Pro
   guard_repair? [candidate] using exact ⟨intent, safe⟩
 ```
 
-The complete policy goal includes validation errors. Its valid repairs are the
-same as those for the native allow decision. Use the full policy goal when a
-single temporal condition would omit other requirements.
+`pack.toLeanLTL` includes the validation-error gate, so the repairs it accepts are
+exactly the ones the native allow decision accepts. Prefer it to a single temporal
+condition, which would leave out the policy's other requirements.
 
-These proofs concern the supplied history. New events can revoke approval or
-consume a budget, so a previously proved repair needs a fresh admission check.
-LeanGuard's trace runs toward the past; this interface does not establish future
-task completion or arbitrary infinite-trace liveness. See the
-[LeanLTL guide](../../docs/leanltl.md) for the semantics.
+A repair proof is about the history you gave it. Later events can revoke an approval
+or use up a budget, so check admission again before acting on an old proof. LeanGuard's
+traces run toward the past, so these goals say nothing about whether a task will
+eventually finish. The [LeanLTL guide](../../docs/leanltl.md) explains the semantics.
 
 The [temporal examples](TemporalStress.lean) cover ordering, windows, scope,
-revocation, and proof reuse. Run them with:
+revocation and proof reuse:
 
 ```sh
 lake build LeanGuard.Experimental.TemporalRepair
 lake env lean examples/repair/TemporalStress.lean
 ```
 
-The [Dogwood examples](../dogwood/README.md#repair-experiments) include both a
-quantity repair and proofs that specified repair contracts are impossible.
+The [Dogwood examples](../dogwood/README.md#repair-experiments) include a quantity
+repair and proofs that some repair contracts cannot be met at all.

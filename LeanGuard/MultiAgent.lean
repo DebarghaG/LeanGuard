@@ -1,8 +1,8 @@
 import LeanGuard.Schema
 
-/-! Bounded delegation and asynchronous task ownership. All budgets are checked and
-charged at every ancestor, in the same native admission transition as tool policy.
-Agent identifiers are assigned by the trusted host, never by message roles. -/
+/-! Delegated grants with budgets, and ownership of asynchronous tasks. A call is
+checked and charged against every ancestor grant in the same step that runs the tool
+policy. Agent identities come from the host, never from message contents. -/
 namespace LeanGuard.MultiAgent
 open Lean Data
 
@@ -70,7 +70,7 @@ def TaskPhase.terminal : TaskPhase → Bool
   | .completed | .canceled | .rejected | .failed => true
   | _ => false
 
-/-- A snapshot may skip unobserved intermediate states; terminal states are absorbing. -/
+/-- Any move out of a non-terminal phase is allowed, since polls can skip phases. A terminal phase can't change. -/
 def taskTransition (old next : TaskPhase) : Bool := !old.terminal || old == next
 
 theorem terminal_absorbing (old next : TaskPhase) (done : old.terminal = true)
@@ -100,7 +100,7 @@ structure Conversation where
   resource : String
   deriving ToJson
 
-/-- An admitted operation's first accepted response fixes its target. -/
+/-- What a response refers to. The first accepted response for an operation fixes it. -/
 inductive ResponseTarget where
   | task (id context : String)
   | message (context : String)
@@ -134,7 +134,7 @@ def State.bindResponse (s : State) (request : String) (target : ResponseTarget) 
   | some established =>
     if established = target then .ok s else .error "response target mismatch"
 
-/-- Fuel is bounded by the number of grants. Issue only permits existing parents. -/
+/-- The chain of grants from `id` up to the root. Fuel is the number of grants, which bounds the depth. -/
 def lineage (s : State) : Nat → String → Except String (List Grant)
   | 0, _ => .error "invalid delegation lineage"
   | n + 1, id => do
@@ -169,7 +169,7 @@ def withinGrant (s : State) (e : Event) (g : Grant) : Bool :=
     g.actions.contains e.action && g.resources.contains e.resource && g.peers.contains e.peer &&
     !s.revoked.contains g.id && e.time ≤ g.expires && (s.usage g.id).fits g e.amount
 
-/-- Declarative authority meaning, independent of the executable Boolean checks. -/
+/-- What it means for a grant chain to authorize a call, stated as a proposition. -/
 def WithinGrant (s : State) (e : Event) (g : Grant) : Prop :=
   g.principal = e.principal ∧ g.workflow = e.workflow ∧ e.action ∈ g.actions ∧
     e.resource ∈ g.resources ∧ e.peer ∈ g.peers ∧ g.id ∉ s.revoked ∧ e.time ≤ g.expires ∧
@@ -223,7 +223,7 @@ def charge (s : State) (chain : List Grant) (amount : Nat) : State :=
       chain.map (fun g ↦ (g.id, (s.usage g.id).reserve amount)) ++
         s.usages.filter (fun p ↦ !chain.any (·.id == p.1)) }
 
-/-- Authority can only restrict the existing compiled policy verdict. -/
+/-- Denies the decision when authority checks fail; never turns a denial into an allow. -/
 def restrict (decision : Decision) (authority : Except String (List Grant)) : Decision :=
   match authority with
   | .ok _ => decision
@@ -237,8 +237,8 @@ theorem restriction_preserves_policy (d : Decision) (a : Except String (List Gra
     (h : (restrict d a).allow = true) : d.allow = true := by
   cases a <;> simp_all [restrict]
 
-/-- Evidence must predate admission. Every ancestor's grant remains unrevoked
-since its issuance, projected before temporal operators to the workflow. -/
+/-- Each ancestor grant must have been issued earlier in this workflow and not revoked
+since. The history is projected to the workflow before the temporal operators run. -/
 def grantEvent (g : Grant) : Formula Check := eventCheck "delegation_issued" fun r e ↦
   samePrincipal r e && e.kind == "agent_grant" && e.resource == g.id &&
     e.actor == g.actor && e.workflow == g.workflow
@@ -258,8 +258,8 @@ def historyPack (action : String) (chain : List Grant) : PolicyPack := {
     require "agents.lifecycle" [action] (authorityHistory chain) "prior, unrevoked ancestor grants"]
 }
 
-/-- The live multi-agent verdict conjoins the original pack, temporal contracts,
-and the state ledger. The temporal conjunct uses the existing verified evaluator. -/
+/-- The multi-agent decision: the tool policy, the grant-history formula and the
+budget ledger must all allow the call. -/
 def decideAdmission (pack : PolicyPack) (c : Context) (authority : Except String (List Grant)) : Decision :=
   let base := restrict (decidePolicy pack c) authority
   match authority with

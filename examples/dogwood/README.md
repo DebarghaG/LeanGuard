@@ -1,35 +1,43 @@
-# Dogwood guide dogfooding
+# Dogwood guide examples in LeanGuard
 
-This separate Lake project encodes all **86** examples in the
-[Dogwood guide index](https://dogwood-policy.github.io/dogwood/examples/index.html)
-using LeanGuard's existing public APIs. It does not add policies to the production
-registry or implement a Dogwood language frontend.
+[Dogwood](https://github.com/dogwood-policy/dogwood) is a runtime-verification
+language for AI agents, and its guide contains 86 worked examples. This project
+writes every one of them as a native LeanGuard policy, then runs both
+implementations on the same traces to see whether they agree. It's a test of
+whether LeanGuard's public API, as it stands, can express someone else's policy
+language. It could: no LeanGuard changes were needed.
 
-Source: [dogwood-policy/dogwood at c6237c8](https://github.com/dogwood-policy/dogwood/tree/c6237c88099b3f492ecc5fcee42df06a19224b97/dogwood-docs/examples).
-Upstream bundles remain in their Apache-2.0 checkout. Our native implementation,
-adapter and tests are covered by LeanGuard's MIT license.
+Everything here lives in a separate Lake project. None of these policies go into
+LeanGuard's built-in registry, and there is no Dogwood parser: each example was
+ported by hand.
 
-## What is represented
+The examples come from the
+[Dogwood guide index](https://dogwood-policy.github.io/dogwood/examples/index.html),
+pinned to [dogwood-policy/dogwood at c6237c8](https://github.com/dogwood-policy/dogwood/tree/c6237c88099b3f492ecc5fcee42df06a19224b97/dogwood-docs/examples).
+The upstream bundles stay in their own Apache-2.0 checkout. The native
+implementation, adapter and tests here are under LeanGuard's MIT license.
 
-| Approach | Examples | Boundary |
+## How the examples are encoded
+
+| Approach | Examples | What crosses into Lean |
 | --- | ---: | --- |
 | Native predicates and temporal operators | 65 | Normalized, typed event records |
-| Additional data adapters | 10 | Entity type/membership, optional request context, clock, or custom event kinds |
-| Information-provider adapters | 11 | Trusted typed provider results; no proof of Rhai, regex or a classifier |
+| Extra data adapters | 10 | Entity type and membership, optional request context, a clock, or custom event kinds |
+| Information-provider adapters | 11 | Typed results from trusted providers; the Rhai, regex or classifier behind them stays outside the proof |
 
-**84 examples can be compared against the actual Dogwood interpreter.** The other
-two, `sell_after_2024_datetime` and `sell_datetime_window`, have native encodings
-and independent clock-boundary checks, but are not counted as differential
-successes. At the pinned revision, Dogwood's event `Value` type and log parser
-cannot carry a datetime. Supplying an ISO timestamp produces
-`expected datetime, got string`. Both source policies validate, and neither has
-a published trace. We retain these errors in the report and check the intended
-clock predicates separately; we do not change the upstream engine.
+84 of the 86 can be compared directly against the Dogwood interpreter. The other
+two, `sell_after_2024_datetime` and `sell_datetime_window`, can't, because at the
+pinned revision Dogwood's event `Value` type and log parser have no way to carry a
+datetime: supplying an ISO timestamp fails with `expected datetime, got string`.
+Both source policies validate, and neither has a published trace. The runner keeps
+those errors in its report and checks the intended clock predicates on its own,
+leaving the upstream engine unchanged. These two aren't counted as differential
+successes.
 
 ## Run
 
-From the LeanGuard repository root, with the development Python environment
-installed as described in the main README:
+Start from the LeanGuard repository root with the development Python environment
+from the main README:
 
 ```sh
 git clone https://github.com/dogwood-policy/dogwood /tmp/dogwood-guide-source
@@ -44,112 +52,119 @@ cd ../..
   --dogwood /tmp/dogwood-guide-source/target/debug/dogwood
 ```
 
-Rust is needed only to build the comparison engine. LeanGuard's standalone
-example binary and the Python adapter do not invoke Rust. The runner requires a
-clean pinned source checkout, allowing generated Cargo.lock and target/ build
-outputs. Preserve that lockfile with your reference build if reproducing its
-dependency resolution.
+Rust is only needed to build Dogwood for comparison; the LeanGuard example binary and
+the Python adapter never call it. The runner insists on a clean checkout at the pinned
+revision, apart from the `Cargo.lock` and `target/` that the build generates. If you
+want to reproduce the exact dependency resolution, keep that lockfile alongside your
+reference build.
 
-`run.py` validates every source bundle, checks every published trace against
-both the original CLI and `expected.out`, and runs the generated scenarios from
-`cases.py`. No expected verdict is used to construct a native policy. It exits
-nonzero on an unexpected disagreement or evaluation error. For the two clock
-examples it explicitly checks that the documented source limitation still holds.
-An interrupted report lacks the final `summary` field.
+`run.py` validates every source bundle, checks each published trace against both the
+original CLI and its `expected.out`, and then runs the generated scenarios in
+`cases.py`. Expected verdicts are only ever compared against, never used to build a
+native policy. The script exits nonzero on any unexpected disagreement or evaluation
+error, and for the two clock examples it checks that the upstream limitation is still
+there. If a run is interrupted, the report has no final `summary` field.
 
-The ignored `results.json` records source-file and binary SHA-256 hashes, a hash
-of each generated trace, decision counts, and every disagreement. Temporary traces,
-upstream dependencies, binaries and raw reports are excluded from source distribution.
+The results go to `results.json`, which git ignores. It records SHA-256 hashes of the
+source files and binaries, a hash of each generated trace, decision counts, and every
+disagreement. Temporary traces, upstream dependencies, binaries and raw reports are
+kept out of the source distribution.
 
 ## Semantics that matter
 
-- **One line is one timepoint.** Equal timestamps remain distinct positions.
-  `formerly` includes the current position; windows include their endpoints.
-  Default principal pins project the history before `previous` and `since`.
-  The two explicitly unpinned alert schemas and the raised-window schema retain
-  global history. Resource correlation is added only where the source asks for it.
-- **Logged data and current request context are separate.** A historical response
-  becomes a `success` record for matching purposes, even if its output contains
-  `result: false`. Only a policy explicitly checking that output requires true.
-  Neither a response nor an approval-named request becomes a user confirmation.
-  Denied requests and recorded outcomes remain in replay history.
-- **Custom kinds have an explicit mapping.** Only the `login_attempt_custom_kind`
-  schema maps `attempt` to request and `outcome` to response. The adapter rejects
-  unsupported kinds and disagreements between logged actor/resource and scope.
-- **Aggregation respects the binder.** Counts refer to positions, not unique
-  timestamps or amounts. The `(amount,timepoint)` sums retain repeated values and
-  use signed integers. The current-only amount sum deduplicates its value domain.
-  These examples compare sums against small bounds; exact integer totals and
-  Dogwood's final signed-64 saturation give the same threshold comparison.
-- **Providers are outside the proof boundary.** The small adapters reproduce the
-  shipped provider fixtures and pass individual results into Lean, where the
-  policy combines them. Dogwood evaluates its original Rhai independently.
-  For example, `Content::Risk` here is the source's fixed keyword lookup, not an
-  actual content classifier. The regex adapter uses whole-string matching to
-  preserve Rust's end-anchor behavior for a final newline.
-- **The comparison domain is explicit.** It uses each example's finite action
-  schema, typed Cedar Long inputs, integer-second event timestamps and coherent
-  scope fields. Decimal context values use exact signed four-place coefficients;
-  clocks use UTC milliseconds. This adapter is not a general Cedar parser or
-  entity-store validator. Error recovery and malformed-record behavior across the
-  two complete languages are not claimed equivalent.
+Most disagreements you'd expect between two policy engines come down to a handful of
+modeling choices. These are the ones this port makes.
 
-Several source examples are weaker than their names or comments suggest:
+- One line is one timepoint. Two events with the same timestamp are still two
+  positions. `formerly` includes the current position, and windows include their
+  endpoints. By default each history is projected to the principal before `previous`
+  and `since` run. The two alert schemas that are explicitly unpinned, and the
+  raised-window schema, keep the global history instead. Resource correlation is
+  added only where the source asks for it.
+- Logged data and the current request's context are kept apart. A historical
+  response counts as a `success` record for matching, even if its output says
+  `result: false`; only a policy that explicitly checks that output requires it to be
+  true. Neither a response nor a request with "approval" in its name becomes a user
+  confirmation, and denied requests and recorded outcomes both stay in the replayed
+  history.
+- Custom event kinds are mapped explicitly. Only the `login_attempt_custom_kind`
+  schema maps `attempt` to a request and `outcome` to a response. The adapter rejects
+  any other kind, and rejects records whose logged actor or resource disagrees with
+  their scope.
+- Aggregates count positions. A count is over positions, so repeated timestamps or
+  amounts are counted again. Sums binding `(amount,timepoint)` keep repeated values
+  and use signed integers, while the sum over current-only amounts deduplicates its
+  values. Because these examples only compare sums against small bounds, exact integer
+  totals and Dogwood's final signed 64-bit saturation give the same answer.
+- Providers sit outside the proof. Small adapters reproduce the provider fixtures
+  that ship with Dogwood and pass each result into Lean, where the policy combines them;
+  Dogwood runs its original Rhai separately. So `Content::Risk` here is the source's
+  fixed keyword lookup, standing in for a real content classifier. The regex adapter
+  matches the whole string, which reproduces how Rust's `$` treats a trailing newline.
+- The comparison covers a fixed domain. Each example uses its own finite action
+  schema, typed Cedar Long inputs, integer-second timestamps and consistent scope
+  fields. Decimal context values are exact signed numbers with four decimal places, and
+  clocks are UTC milliseconds. The adapter doesn't parse general Cedar or validate entity
+  stores, and the two languages' handling of malformed records and error recovery are
+  not claimed to match.
 
-- `read_login_not_logout` negates a Logout at the **current** position. A previous
-  Logout does not invalidate an earlier Login. The generated trace tests this.
-- `temporal_login_then_read` and its composed-macro counterpart require both
-  events within the hour, without requiring Login to precede Read.
+Some source examples do less than their names or comments suggest, and the port keeps
+them that way:
+
+- `read_login_not_logout` only rules out a Logout at the current position, so a Logout
+  that happened earlier doesn't cancel an earlier Login. A generated trace tests this.
+- `temporal_login_then_read`, and its composed-macro counterpart, require both events
+  within the hour but never require the Login to come before the Read.
 - `write_after_read` actually gates SellShares on an ApproveSale response for the
-  stock. It does not check the approval's Boolean output or consume it.
-- Seven examples always deny in the single-event-per-timepoint model:
+  stock. It neither checks the approval's Boolean output nor consumes it.
+- Seven examples deny every call when each timepoint holds a single event:
   `alert_heartbeat_and_login_rate`, `alert_login_current_tp`,
   `alert_total_transfer_over_200`, `read_heartbeat_since_login_30s`,
-  `read_since_login`, `forbid_large_except_amzn`, and
-  `forbid_read_transfers_over_1000`. The first five require an incompatible current
-  event or current-only aggregate. The last two contain no permit rule. For these
-  forbid-only packs, the runner also compares whether the forbid fires, so a
-  broken threshold or sum cannot hide behind default denial.
+  `read_since_login`, `forbid_large_except_amzn` and
+  `forbid_read_transfers_over_1000`. The first five need a second event or a
+  current-only aggregate at the current position. The last two have no permit rule at
+  all. Because default denial would hide a broken threshold or sum in those two, the
+  runner also compares whether the forbid itself fires.
 
-These behaviors are intentionally preserved. This is a representation exercise,
-not an endorsement of these rules as suitable production guardrails.
+The point of the exercise is faithful representation, so these rules are ported as
+written. They aren't recommendations for production guardrails.
 
 ## Proof scope
 
-`lake build` checks `GuideAudit.lean`, including the runtime entry point and the
-entire imported LeanGuard/guide declaration namespaces. The audit rejects
-`sorryAx` and custom axioms; only Lean's standard `propext`, `Classical.choice`
-and `Quot.sound` are allowed.
+`lake build` checks `GuideAudit.lean`, which audits the runtime entry point and every
+declaration in the imported LeanGuard and guide namespaces. The audit rejects
+`sorryAx` and custom axioms, allowing only Lean's standard `propext`,
+`Classical.choice` and `Quot.sound`.
 
-`DogwoodGuide.sound` connects every encoded decision, including the error gate,
-to its LeanLTL meaning through `decision_leanLTL_correct`.
-`DogwoodGuide.access_witness` additionally exposes a grant witness within the hour
-and absence of matching revocations at every later position in the principal's
-history. For the published access example, replay yields
-**Grant: deny → Access: allow → Revoke: deny → Access: deny**.
+`DogwoodGuide.sound` ties every encoded decision, error gate included, to its LeanLTL
+meaning through `decision_leanLTL_correct`. `DogwoodGuide.access_witness` goes further
+for the access example: an allowed access has a grant within the hour, and no matching
+revocation at any later position in the principal's history. Replaying the published
+access trace gives Grant: deny → Access: allow → Revoke: deny → Access: deny.
 
-These are kernel-checked theorems about the encoded policies and supplied facts.
-Replay agreement is testing evidence for the manual ports, **not a proof of
-equivalence to Dogwood's Rust implementation**, truthful logs, or external
-provider results. No new production API or formal-policy relaxation was needed.
+The theorems are about the encoded policies and the facts they're given. Agreement in
+replay is test evidence that the hand ports are right. Equivalence to Dogwood's Rust
+implementation, truthful logs, and correct provider results are all outside what's
+proved; the [guarantee boundary](../../docs/guarantees.md) covers this in general.
 
 ## Repair experiments
 
-[Repairs.lean](Repairs.lean) uses `guard_repair?` with complete LeanLTL policy goals.
-It shows a sale of 100 shares repaired to 99 when the task explicitly permits a
-smaller positive sale. If the task requires exactly 100, the same example proves
-that no permitted edit can pass. It also proves that the two forbid-only guide
-policies cannot admit any call, regardless of its arguments or history.
+[Repairs.lean](Repairs.lean) runs `guard_repair?` against full LeanLTL policy goals.
+When the task allows a smaller positive sale, a sale of 100 shares is repaired to 99.
+When the task requires exactly 100, the same file proves no allowed edit exists. It
+also proves that the two forbid-only guide policies can never admit a call, whatever
+its arguments or history.
 
-Run from the repository root:
+Run it from the repository root:
 
 ```sh
 lake build LeanGuard.Experimental.TemporalRepair
 (cd examples/dogwood && lake build && lake env lean Repairs.lean)
 ```
 
-These contracts preserve the action and trusted evidence. A smaller transaction
-requires permission from the user; policy compliance alone does not establish
-that it fulfills their request. Missing approval, an expired grant, or a consumed
-budget may require new trusted events before retrying. A failed candidate search
-is not an impossibility proof. See the [repair guide](../repair/README.md).
+These repair contracts keep the action and the trusted evidence fixed. Selling fewer
+shares still needs the user's permission, since a policy-compliant call isn't
+necessarily what they asked for. A missing approval, an expired grant or a spent
+budget can only be fixed by new trusted events, after which the call can be retried.
+When candidate search fails, all it shows is that none of the candidates worked. The
+[repair guide](../repair/README.md) has the details.

@@ -3,7 +3,7 @@ import LeanGuard.RuntimeCore
 
 namespace LeanGuard
 
-/-- Built-in registry compatibility entry point. Custom servers use `handleWith`. -/
+/-- Request handler for the built-in packs. Custom servers call `handleWith` directly. -/
 def handle := handleWith packFor
 
 end LeanGuard

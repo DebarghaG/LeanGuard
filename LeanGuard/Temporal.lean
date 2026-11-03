@@ -4,18 +4,19 @@ import LeanLTL.TraceSet.Defs
 /-!
 # LeanLTL semantics of the native temporal language
 
-Time runs toward the past: a state is the remaining newest-first history, so atoms
-retain access to their full suffix. A final empty-history state makes the embedding
-total, including for empty inputs. Window predicates exclude that terminal state.
-`previous`, `once`, and `since` use LeanLTL's strong next, finally, and until.
-Metric operators freeze their own origin; scope operators re-embed projected history.
-The translation does not call either `evaluate` or `Holds`.
+A history becomes a LeanLTL trace that runs toward the past: each state is the rest of
+the newest-first history, so an atom can still look at everything older. The trace ends
+in an empty history, so even an empty input has a trace; window predicates never match
+that last state. `previous`, `once` and `since` become strong next, finally and until.
+A metric operator measures time from the position where it is evaluated, and `within`
+re-embeds the projected history. The translation is written without reference to
+`evaluate` or `Holds`.
 -/
 
 namespace LeanGuard
 open LeanLTL
 
-/-- The finite trace of all suffixes, including the terminal empty history. -/
+/-- The trace of every suffix of `h`, ending with the empty history. -/
 def historyTrace (h : History) : Trace History where
   toFun? i := if i ≤ h.length then some (h.drop i) else none
   length := ↑(h.length + 1)
@@ -26,13 +27,13 @@ def historyTrace (h : History) : Trace History where
     split <;> simp_all
 
 
-/-- Independent metric specification: inclusive age bounds, with future events excluded. -/
+/-- The event is not in the future and is at most `window` seconds old (inclusive). -/
 def InPastWindow (w : Option Nat) (origin past : History) : Prop :=
   ∃ now older, origin.head? = some now ∧ past.head? = some older ∧
     older.time ≤ now.time ∧ ∀ limit ∈ w, now.time - older.time ≤ limit
 
 
-/-- A state predicate with an origin frozen outside LeanLTL's temporal operator. -/
+/-- A window predicate whose reference time is fixed before the temporal operator shifts. -/
 def pastWindow (w : Option Nat) (origin : History) : TraceSet History :=
   TraceSet.of (InPastWindow w origin)
 
@@ -54,7 +55,7 @@ def Formula.toLeanLTL (atom : α → History → Bool) : Formula α → TraceSet
       historyTrace (projectAtHead scope (t.toFun 0)) ⊨ p.toLeanLTL atom⟩
 
 
-/-- Deny-overrides authorization, expressed using LeanLTL connectives and quantifiers. -/
+/-- Authorization in LeanLTL: some permit holds, every requirement holds, and no forbid holds. -/
 def authorizationLeanLTL (rules : List (Rule α)) (atom : α → History → Bool)
     (action : String) : TraceSet History :=
   (TraceSet.exists fun r : Rule α ↦

@@ -217,8 +217,8 @@ def compensationEligible (c : Context) : Except String Bool := do
   return ["silver", "gold"].contains member || (← str r "insurance") == "yes" ||
     (← str r "cabin") == "business"
 
-/-- The matching outcome carries the authoritative snapshot from before dispatch.
-Missing or malformed imported snapshots cannot supply a disruption witness. -/
+/-- Reads disruption evidence from the snapshot taken before the change or cancellation
+was dispatched. A missing or malformed snapshot yields no evidence. -/
 def delayedSnapshot (c : Context) (e : Event) : Except String Bool := do
   let before := { c with facts := ← Json.parse e.factsJson }
   let r ← fact before "reservation"

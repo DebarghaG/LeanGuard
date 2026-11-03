@@ -3,17 +3,16 @@ import LeanGuard.Experimental.Solve
 /-!
 # Experimental, proof-producing repair search
 
-`guard_repair? [candidates]` tries explicit witnesses for an existential repair goal
-and suggests an ordinary Lean proof. The goal defines both compliance and the
-allowed edits. Search failure means that no candidate was proved, not that no
-repair exists. This module is opt-in and does not participate in tool dispatch.
+`guard_repair? [candidates]` tries each candidate as the witness for an existential
+repair goal and, on success, suggests an ordinary Lean proof. The goal says both what
+the policy requires and which edits are acceptable. If every candidate fails, that only
+means none was proved. Nothing here runs during tool dispatch.
 -/
 
 namespace LeanGuard.Experimental
 open Lean Meta Elab Tactic
 
-/-- Attach existing policy descriptions to the actual decision, including its error gate.
-Descriptions are guidance from the policy author, not certified repair plans. -/
+/-- Pairs each blocking rule in a decision with the description its author wrote. -/
 def explain (pack : PolicyPack) (ctx : Context) : Json :=
   let decision := decidePolicy pack ctx
   let applicable := pack.rules.filter fun r ↦ r.applies ctx.request.action
@@ -28,13 +27,14 @@ def explain (pack : PolicyPack) (ctx : Context) : Json :=
       fun r ↦ Json.mkObj [("id", toJson r.id), ("source", toJson r.source)]))
   ]
 
-/-- Display denial reasons and policy-author guidance for a concrete, frozen context. -/
+/-- Prints the decision for a concrete context and the descriptions of any rules that blocked it. -/
 macro "#guard_explain " pack:term:max ctx:term:max : command =>
   `(#eval IO.println ((LeanGuard.Experimental.explain $pack $ctx).pretty))
 
-/-- Try explicit candidate edits using existing tactics, or a caller-supplied discharger.
-The first fully proved witness wins; order candidates by preference before calling.
-Keep trusted facts/history fixed and encode edit restrictions in the existential goal. -/
+/-- Tries each candidate in order with `guard_solve`, or with the tactic given after
+`using`, and keeps the first one that is fully proved. List candidates in order of
+preference. The goal should fix trusted facts and history and state which edits are
+acceptable. -/
 syntax (name := guardRepair) "guard_repair? " optConfig "[" term,* "]"
   (" with " "[" Lean.Parser.Tactic.grindParam,* "]")?
   (" using " tacticSeq)? : tactic
@@ -63,7 +63,7 @@ elab_rules : tactic
         GuardSolver.runChecked goal <| evalTactic proofScript
         for failure in failures do
           trace[guard.repair] failure
-        -- Keep source info during execution for tactic linters; omit trailing comments in output.
+        -- Linters need source info while the tactic runs; the printed suggestion drops trailing comments.
         let displaySolver : TSyntax ``Parser.Tactic.tacticSeq :=
           ⟨solver.raw.rewriteBottomUp (Syntax.setInfo .none)⟩
         let suggestion ← `(tactic| exact ⟨$candidate, by $displaySolver⟩)

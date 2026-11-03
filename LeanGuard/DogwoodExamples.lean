@@ -59,7 +59,8 @@ def confidentiality : PolicyPack := withSchemas { name := "dogwood.confidential"
     "Dogwood introduction: no external contact after confidential access"
 ] } [("ReadDocument", .object [] []), ("ContactExternal", .object [] [])]
 
-/-- Deliberately unsafe response-only policy, used only by the offline conformance runner. -/
+/-- A deliberately unsafe policy that only checks responses. The offline conformance
+runner uses it as a negative control; no server can load it. -/
 def unsafeResponseSum :=
   transferPack "dogwood.unsafe_response_sum" (excessiveTotal .successes) "amount" .integer
 

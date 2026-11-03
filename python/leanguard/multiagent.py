@@ -1,8 +1,8 @@
-"""One durable authority domain shared by bound agent handles.
+"""Multi-agent runtime: agent handles share one durable journal, grants and budgets.
 
-Keep the coordinator, grant/revoke APIs, adapter and native control channel in
-trusted host code. A handle is an in-process integration API, not an OS sandbox.
-Use authenticated routing when exposing handles to other processes.
+Keep the coordinator, grant and revoke calls, the adapter and the native engine in
+trusted host code. Handles are ordinary Python objects with no process isolation;
+put authenticated routing in front of them before exposing them to other processes.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from .types import CallResult
 
 @dataclass(frozen=True)
 class Interaction:
-    """Exact outbound operation with host-derived facts and charge.
+    """An outbound operation, with resource, facts and charge worked out by the host.
 
-    This asserts no revision or lock over remote state. Protocol adapters must
-    preserve these admitted arguments on the wire.
+    Unlike a `Snapshot` it has no revision, because the host can't lock remote
+    state. Protocol adapters must send exactly the admitted arguments.
     """
 
     action: str
@@ -34,7 +34,7 @@ class Interaction:
 
 @dataclass(frozen=True)
 class Agent:
-    """Host-bound actor identity and a native, attenuating delegation."""
+    """An agent handle: an actor identity bound by the host, plus its delegated grant."""
 
     _host: MultiAgentHost
     actor: str
@@ -71,7 +71,7 @@ class Agent:
         expires: int,
         depth: int = 0,
     ) -> Agent:
-        """Narrow authority; all ancestors retain shared, cumulative usage."""
+        """Create a child grant with narrower authority. Its usage also counts against every ancestor."""
         return self._host._grant(
             actor,
             workflow=self.workflow,
@@ -88,11 +88,10 @@ class Agent:
 
 
 class MultiAgentHost(GuardHost):
-    """GuardHost with mandatory native delegation on every admitted operation.
+    """A GuardHost in which every operation must also be covered by a delegated grant.
 
-    Each instance still has one principal and one writer. All actors that share
-    budgets/resources must use this same journal. Separate instances do not
-    establish distributed coordination or a shared quota.
+    Each instance has one principal and one writer. Agents that share budgets or
+    resources must use the same instance; separate instances share nothing.
     """
 
     def __init__(self, *args, **kwargs):
@@ -134,7 +133,7 @@ class MultiAgentHost(GuardHost):
         expires: int,
         depth: int = 4,
     ) -> Agent:
-        """Trusted host authority. Never expose this method as an agent tool."""
+        """Issue a root grant for a workflow. Host code only; never expose this to an agent."""
         return self._grant(
             actor,
             workflow=workflow,
@@ -193,7 +192,7 @@ class MultiAgentHost(GuardHost):
         return Agent(self, actor, workflow, grant["id"])
 
     def bind(self, delegation: str) -> Agent:
-        """Trusted routing after authentication, including after journal recovery."""
+        """Get the handle for an existing grant, e.g. after authenticating a worker or reopening the journal."""
         with self._lock:
             grant = next((g for g in self._status()["grants"] if g["id"] == delegation), None)
             if grant is None:
@@ -201,7 +200,7 @@ class MultiAgentHost(GuardHost):
             return Agent(self, grant["actor"], grant["workflow"], delegation)
 
     def revoke(self, delegation: str) -> None:
-        """Revoke this grant and, through ancestor checks, all its descendants."""
+        """Revoke a grant. Its descendants stop working too, since admission checks every ancestor."""
         with self._lock:
             self._record(
                 {
@@ -230,11 +229,11 @@ class MultiAgentHost(GuardHost):
             return task
 
     def reconcile(self, request_id: str, receipt: dict) -> None:
-        """Trusted runtime settlement using an authenticated receipt for this request.
+        """Settle an unresolved request using an authenticated receipt.
 
-        The runtime must independently establish the receipt's provenance and
-        request correlation. Agent text is not a receipt. No tool is redispatched,
-        no grant is minted, and no count/amount reservation is refunded.
+        Check yourself that the receipt is authentic and belongs to this request;
+        agent text never qualifies. Nothing is redispatched, no grant is created,
+        and the reserved count and amount are not refunded.
         """
         receipt = json.loads(canonical(receipt))
         with self._lock:

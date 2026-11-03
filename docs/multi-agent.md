@@ -1,55 +1,79 @@
 # Multi-agent runtime and A2A
 
-The trusted runtime owns one authoritative coordinator journal. Agents submit
-proposals; they cannot mint identities, grants, observations, or confirmations.
-All workers that share authority, budgets, or resources use that coordinator.
-Admission, ancestor budget consumption, and dispatch reservation are one native
-transition, committed to SQLite before dispatch. Network waits occur outside the
-coordinator lock. The existing file lock rejects competing journal writers.
+When several agents work on one task, say a planner that hands reads to a worker
+and buys from a remote service, two things have to hold together. Each agent
+should be able to do only what it was delegated, and the agents together should
+not be able to spend more than the parent was allowed. `MultiAgentHost` handles
+both by running every agent through one coordinator: a single journal (the
+durable SQLite log of decisions) that owns identities, delegations, budgets and
+task state for the whole workflow.
 
-## Abstractions and trust
+Agents propose operations; they cannot mint identities, grants, observations or
+confirmations. For each proposal, admission (the engine's allow-or-deny decision),
+charging every ancestor's budget and reserving the dispatch (recording the call as
+in flight) happen in one native transition, committed to SQLite before anything
+runs. Network waits happen outside the coordinator lock. A file lock stops a
+second process from writing to the same journal, so every worker that shares
+authority, budgets or resources has to go through this one coordinator.
 
-- `Agent` binds a workload actor, workflow and delegation to a coordinator. The
-  principal remains the host-assigned subject/accounting namespace. Include the
-  tenant in that namespace. Authenticated orchestration chooses the handle;
-  payload roles and user-supplied actor IDs do not authenticate an agent.
-- `Grant` is attenuating authority, distinct from a one-use user `Proposal`.
-  Children can narrow actions, resources, peers, expiry, limits and delegation
-  depth. Every admitted operation charges every ancestor. Siblings cannot each
-  spend the parent's full budget. Each workflow has one immutable root; issuing
-  another root cannot reset its budget. Revocation reaches every descendant.
-- `Interaction` describes an exact outbound operation and its host-derived resource,
-  facts and charge. It makes no claim about a remote state revision. Local tools
-  continue to use `Snapshot` and the adapter's backend lock/revision contract.
-- Task phases are protocol-independent typed values. The A2A adapter normalizes
-  wire states and scopes task/context ownership by peer, principal, actor,
-  workflow, delegation and resource. `referenceTaskIds` is not an authority chain.
-  Context-only sends must match the context's resource before dispatch. Each
-  dispatch's first accepted receipt fixes its response kind, task and context;
-  subsequent receipts cannot substitute another target, even one owned by the
-  same agent. These native bindings survive journal replay and apply equally to
-  streamed updates and trusted reconciliation.
+## Concepts
 
-The native module `MultiAgent.lean` contains authority, shared accounting and
-generic temporal grant contracts. `A2A.lean` contains wire normalization and A2A
-policies. Python `multiagent.py` controls durable execution; `a2a.py` adapts the
-protocol. Neither an agent's text nor a remote artifact becomes user approval,
-identity, a grant, or authoritative local backend facts.
+`Agent` is a handle that binds a workload actor, a workflow and a delegation to the
+coordinator. The principal is still the host-assigned subject and accounting
+namespace, so put the tenant in it. Authenticated orchestration decides which
+handle a caller gets; role fields in a payload or actor IDs supplied by a user
+never authenticate an agent.
 
-Agent handles are integration objects, not an OS sandbox. The runtime must retain
-backend credentials and control channels, and all actual tool effects must pass
-through it, as required by the existing adapter contract. A remote service outside
-that runtime is governed at the exchange boundary; its internal effects require
-its own integration with the enforcing runtime.
+`Grant` is delegated authority that can only shrink. A child grant may narrow the
+actions, resources, peers, expiry, count and amount limits, and remaining
+delegation depth. Every admitted operation charges every ancestor, which is what
+stops two siblings from each spending the parent's full budget. A workflow has one
+immutable root, so issuing a second root cannot reset its budget, and revoking a
+grant cuts off all of its descendants. A grant is a different thing from a user
+`Proposal`, which is a one-use approval of a single call.
+
+`Interaction` describes one exact outbound operation together with the resource,
+facts and charge that the host derived for it. It says nothing about the remote
+side's state revision. Local tools keep using `Snapshot` and the adapter's lock and
+revision contract.
+
+Task phases are typed values that do not depend on any protocol. The A2A adapter
+maps wire states onto them and scopes ownership of each task and context by peer,
+principal, actor, workflow, delegation and resource. `referenceTaskIds` carries no
+authority. A send that names only a context must match that context's resource
+before it is dispatched. The first receipt accepted for a dispatch fixes its
+response kind, task and context, and later receipts cannot point it at another
+target, even one owned by the same agent. These bindings live in the native state,
+so they survive journal replay and apply to streamed updates and trusted
+reconciliation alike.
+
+The code splits along the same lines. `MultiAgent.lean` holds authority, shared
+accounting and the generic temporal grant contracts; `A2A.lean` holds wire
+normalization and the A2A policies. On the Python side, `multiagent.py` controls
+durable execution and `a2a.py` adapts the protocol. Nothing an agent writes and
+nothing a remote peer returns can become user approval, identity, a grant, or
+authoritative local backend facts.
+
+## Trust boundary
+
+Agent handles are in-process integration objects and give no operating-system
+isolation. The runtime has to keep backend credentials and control channels to
+itself, and every real tool effect has to pass through it, exactly as the
+[adapter contract](guarantees.md) already requires for a single agent. A remote
+service outside the runtime is governed only where it exchanges messages with the
+runtime; its internal effects need their own integration with the enforcing
+runtime.
 
 ## LeanLTL contracts
 
-The actual multi-agent decision conjoins the original compiled policy, authority
-ledger checks and temporal grant history. `MultiAgent.decision_leanLTL_correct`
-proves exact agreement with their composed LeanLTL meaning, including policy
-errors. `authorize_correct` independently proves the declarative authority contract
-for every returned ancestor: subject/workflow, permitted action/resource/peer,
-non-revocation, inclusive expiry, and available count/amount bounds.
+The multi-agent decision is the conjunction of three things: the original compiled
+policy, the authority ledger checks, and the temporal history of grants.
+`MultiAgent.decision_leanLTL_correct` proves that this decision agrees exactly with
+their combined LeanLTL meaning, policy errors included. Separately,
+`authorize_correct` proves the declarative authority contract for every ancestor
+returned: matching subject and workflow, a permitted action, resource and peer, no
+revocation, an unexpired grant (expiry is inclusive), and enough count and amount
+left.
 
 For each ancestor, the admission formula is:
 
@@ -57,13 +81,17 @@ For each ancestor, the admission formula is:
 within workflow (previous (not revoked since issued))
 ```
 
-Projection happens before the temporal operators. Grant issuance must precede
-admission in the journal, even when timestamps are equal. The witness theorems
-expose a prior grant and absence of revocation at every subsequent position.
-The A2A pack additionally rejects terminal-task continuation, duplicate peer/message
-dispatch and unresolved sends. Missing or malformed evidence fails closed.
+Projection to the workflow happens before the temporal operators, so events from
+other workflows cannot shift `previous` or break `since`. A grant has to be issued
+earlier in the journal than the admission that uses it, even when the timestamps
+are equal. The witness theorems expose that prior grant and the absence of any
+revocation at every later position. On top of this, the A2A pack rejects
+continuing a terminal task, dispatching the same peer message twice, and sending
+while an earlier send is unresolved. Missing or malformed evidence fails closed.
 
-`TaskContracts.lean` also uses LeanLTL directly on chronological task traces:
+Admission looks backwards over history, but task lifecycles are about what happens
+next. `TaskContracts.lean` therefore uses LeanLTL directly on chronological task
+traces:
 
 ```text
 lifecycle = G (for each phase: phase -> Xw valid_next_phase)
@@ -71,31 +99,36 @@ completion = F completed
 resolution = F (terminal or input_required or auth_required)
 ```
 
-`terminal_persists` uses LeanLTL's global induction principle to prove that a
-terminal phase is absorbing on finite and infinite traces satisfying lifecycle.
-The finite syntax is upstream `LTLf.Formula`, connected by `LTLf.equisat`; the
-infinite completion syntax uses upstream `LTL.Formula` and `LTL.equisat`.
-Weak next handles the last position of a finite trace; it does not invent a
-successor. A kernel-checked infinite `working` trace satisfies lifecycle safety
-and violates eventual completion. Eventual remote progress is an additional
-assumption, not a consequence of admission or a finite-prefix verdict.
+`terminal_persists` uses LeanLTL's global induction principle to prove that once a
+task reaches a terminal phase it stays there, on any finite or infinite trace that
+satisfies `lifecycle`. The finite version is written in upstream `LTLf.Formula`
+syntax and connected through `LTLf.equisat`; infinite completion uses upstream
+`LTL.Formula` and `LTL.equisat`. Weak next (`Xw`) is what makes the last position of
+a finite trace work, because it does not require a successor to exist.
+
+Eventual completion is a different matter. A kernel-checked trace in which a task
+stays `working` forever satisfies lifecycle safety and violates eventual
+completion, so no admission check or finite-prefix verdict can promise that a
+remote task finishes. That has to be assumed about the remote peer.
 
 The kernel regression corpus checks 4,681 grant histories against an independent
 chronological oracle, and all 512 phase triples against a pairwise terminal-state
-oracle through upstream finite-LTL semantics. Integration tests exercise native
+oracle through upstream finite-LTL semantics. Integration tests cover native
 dispatch, all 64 phase transitions, malformed responses, scope substitution,
 replay, concurrent shared budgets, revocation, storage failure and recovery.
 
-These are contracts about the formal inputs and enforced transitions. They do not
-prove Python, transport authentication, the extraction of declared effects from
-free text, backend fidelity, or a complete refinement of distributed execution.
+These contracts are about the formal inputs and the transitions the runtime
+enforces. Python, transport authentication, extracting declared effects from free
+text, backend fidelity, and a full refinement of distributed execution are outside
+them.
 
 ## Usage
 
-Use a `multiagent.example`, `multiagent.retail`, `multiagent.airline`, or
-`multiagent.telecom` pack for the built-in A2A surface. Downstream packs opt in
-with `LeanGuard.A2A.withOperations`; custom requirements still apply. A
-`MultiAgentHost` can also govern local tools using a pack without A2A operations.
+The built-in packs `multiagent.example`, `multiagent.retail`, `multiagent.airline`
+and `multiagent.telecom` include the A2A operations. A downstream pack opts in with
+`LeanGuard.A2A.withOperations`, and its own requirements still apply. A
+`MultiAgentHost` can also govern local tools only, with a pack that has no A2A
+operations.
 
 ```python
 from pathlib import Path
@@ -117,60 +150,73 @@ with MultiAgentHost(
     result = worker.execute("read", {})
 ```
 
-Keep `runtime.grant`, `runtime.bind`, `runtime.revoke`, `runtime.confirm`, `runtime.reconcile`, native
-requests and trusted observations out of the agent-facing surface. Only give
-workers the operations permitted by their authenticated runtime routing.
-`Agent.prepare` binds user approval to that exact actor/delegation/workflow, in
-addition to the existing argument, resource, revision and policy binding.
+Keep `runtime.grant`, `runtime.bind`, `runtime.revoke`, `runtime.confirm` and
+`runtime.reconcile`, along with native requests and trusted observations, out of
+anything an agent can call. Give each worker only the operations its authenticated
+routing allows. `Agent.prepare` binds a user approval to that exact actor,
+delegation and workflow, as well as to the arguments, resource, revision and
+policy that a single-agent approval already covers.
 
-For A2A, install `.[a2a]` and construct `A2AClient(agent, {peer_id: Peer(...)})`
-in trusted runtime code. Each `Peer` has a transport and a profile returning
-`PeerFacts(resource, amount, facts)` for the exact envelope. That profile must
-validate structured domain effects and derive the charge; a free-text promise
-of a spending limit does not establish its effect. The profile cannot rewrite
-the admitted message. Credentials stay in the host-configured HTTP client.
-Peer IDs must denote canonical authenticated endpoint identities; routing aliases
-must not create independent authority/replay namespaces for the same peer.
+### Talking to remote agents over A2A
 
-The provided transport implements the A2A **1.0 HTTP+JSON client** subset:
-Send Message, Get Task, Cancel Task, Send Streaming Message and Subscribe to Task.
-It supports both direct Messages and stateful Tasks. It does not implement an
-A2A server, Agent Card discovery, push notifications, or other transport bindings.
-The replaceable `A2ATransport` interface accommodates those integrations without
-changing the authority model or temporal semantics.
+Install `.[a2a]` and construct `A2AClient(agent, {peer_id: Peer(...)})` in trusted
+runtime code. Each `Peer` has a transport and a profile that returns
+`PeerFacts(resource, amount, facts)` for the exact message envelope. The profile is
+where the charge comes from: it must validate the structured domain effects and
+derive the amount itself, because a free-text promise to stay under a spending
+limit tells you nothing about what the remote side will do. The profile cannot
+rewrite the admitted message. Credentials belong in the host-configured HTTP
+client. Peer IDs must name canonical, authenticated endpoints, since routing
+aliases for the same peer would otherwise get separate authority and replay
+namespaces.
 
-`A2ATransport.stream` returns an owned `A2AStream` iterator with an asynchronous
-`aclose` method; an async generator implements that contract. The client awaits
-transport cleanup before releasing the coordinator's close fence, including on
-validation failure and cancellation. Callers that stop consuming `send_stream`
-or `subscribe` early must await the returned generator's `aclose()` (or use
-`contextlib.aclosing`).
+The bundled transport implements the A2A 1.0 HTTP+JSON client subset: Send
+Message, Get Task, Cancel Task, Send Streaming Message and Subscribe to Task, for
+both direct Messages and stateful Tasks. It has no A2A server, Agent Card
+discovery, push notifications or other transport bindings. Those can be added
+behind the replaceable `A2ATransport` interface without touching the authority
+model or the temporal semantics.
 
-`outcome="success"` means the protocol operation returned successfully. The
-remote task may still be `working`; `client.task(peer, task_id)` returns its last
-reported phase. Cancellation does not imply rollback. Revocation prevents new
-admissions; evidence for an already admitted operation can still be recorded.
+`A2ATransport.stream` returns an `A2AStream` iterator that the caller owns and that
+has an asynchronous `aclose` method; an async generator meets that contract. The
+client waits for transport cleanup before releasing the coordinator's close fence,
+including when validation fails or the call is cancelled. If you stop consuming
+`send_stream` or `subscribe` early, await the generator's `aclose()` yourself, or
+wrap it in `contextlib.aclosing`.
 
-Unknown sends retain their reservation and charge, block another send to the
-same peer/resource, and are never automatically retried or refunded. Polling
-and subscription to a known task remain separately authorized. The coordinator
-must remain open until active network operations/streams finish or are canceled.
-An interrupted stream does not imply task failure or cancellation.
+### Outcomes, failures and reconciliation
 
-`runtime.reconcile(request_id, receipt)` is a trusted coordinator operation for a
-late authenticated receipt or backend reconciliation result. The runtime must
-establish its provenance and correlation independently of the acting agent.
-Native checks bind it to the original dispatch, update its task evidence, and
-settle the unresolved reservation without redispatch, new authority, or a budget
-refund. Already settled operations cannot be reconciled again. Grant expiry and
-revocation still apply to every subsequent admission.
+`outcome="success"` means the protocol call returned successfully. The remote task
+may still be `working`, and `client.task(peer, task_id)` returns the last phase it
+reported. Cancelling a task does not roll anything back. Revoking a grant stops new
+admissions, but evidence about an operation that was already admitted can still be
+recorded.
 
-Journal restart replays grants, budgets, decisions and task observations without
-dispatch. Exact replay is pinned to the compiled executable. The generic trace
-`audit`/`replay` API explicitly reports insufficient evidence for delegated calls;
-it cannot reconstruct authority from an arbitrary partial event list. Use native
-journal replay for the complete multi-agent state. Existing journals need an
-explicit migration when the compiled binary changes.
+A send whose outcome is unknown keeps its reservation and its charge, blocks
+further sends to the same peer and resource, and is never retried or refunded
+automatically. Polling and subscribing to a known task are authorized separately.
+Keep the coordinator open until every network operation and stream has finished
+or been cancelled. An interrupted stream says nothing about whether the task
+failed or was cancelled.
+
+`runtime.reconcile(request_id, receipt)` is how trusted code settles an operation
+when an authenticated receipt arrives late or the backend reports the result some
+other way. The runtime must establish where the receipt came from and which
+request it belongs to without relying on the acting agent. The native checks bind
+the receipt to the original dispatch, update its task evidence, and settle the
+outstanding reservation. Nothing is redispatched, no authority is created and no
+budget is refunded. An operation can be reconciled only once, and grant expiry and
+revocation still apply to every later admission.
+
+### Restarts and replay
+
+On restart, the coordinator replays grants, budgets, decisions and task
+observations from the journal without dispatching anything. Exact replay is tied
+to the compiled executable, so a changed binary needs an explicit journal
+migration. The generic trace `audit` and `replay` API reports delegated calls as
+insufficient evidence, because authority cannot be reconstructed from an arbitrary
+partial list of events; use native journal replay to recover the full multi-agent
+state.
 
 Run the deterministic example with:
 

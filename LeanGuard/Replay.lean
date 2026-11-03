@@ -3,8 +3,8 @@ import LeanGuard.Runtime
 namespace LeanGuard.Replay
 open Lean Data
 
-/-- Offline trace fragments may begin with responses whose requests predate the fragment.
-This evaluator cannot dispatch tools and does not relax the live outcome protocol. -/
+/-- Offline evaluation for recorded fragments, which may open with responses to requests
+made before the fragment starts. The live server still rejects unmatched outcomes. -/
 def run (pack : PolicyPack) (events : List Event) : Except String (Array Json) := do
   validatePack pack
   let mut history : History := []

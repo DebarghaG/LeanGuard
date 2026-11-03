@@ -52,7 +52,7 @@ def main():
                 print("Unapproved write:", host.execute("write", {"value": "updated"}))
                 print("Read:", host.execute("read", {}))
                 proposal = host.prepare("write", {"value": "updated"})
-                # Deterministic fixture standing in for the separate trusted user UI.
+                # Fixture standing in for a real, trusted confirmation UI.
                 host.confirm(proposal.id, True)
                 print(
                     "Approved fixture write:",

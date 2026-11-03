@@ -1,7 +1,7 @@
 import LeanGuard.Temporal
 import LeanLTL.TraceSet.Basic
 
-/-! Soundness and completeness of native evaluation for the LeanLTL translation. -/
+/-! Proofs that `evaluate` agrees with the LeanLTL translation on every history. -/
 
 namespace LeanGuard
 open LeanLTL
@@ -22,7 +22,7 @@ open LeanLTL
   have bound : i ≤ h.length := by simpa only [historyTrace_bound] using hi
   simp [Trace.toFun, historyTrace, bound]
 
-/-- LeanLTL shift is exactly dropping observations, including at the terminal state. -/
+/-- Shifting the trace by `i` is the trace of `h.drop i`. -/
 theorem historyTrace_shift (h : History) (i : Nat)
     (hi : (i : ℕ∞) < (historyTrace h).length) :
     (historyTrace h).shift i hi = historyTrace (h.drop i) := by
@@ -89,7 +89,7 @@ theorem historyTrace_until (p q : TraceSet History) (h : History) :
   · rintro ⟨i, hi, hq, hp⟩
     exact ⟨i, fun j hj _ ↦ hp j hj, by simpa only [historyTrace_bound] using hi, hq⟩
 
-/-- Every native constructor agrees with the completed vendored LeanLTL semantics. -/
+/-- `Holds` agrees with the LeanLTL translation for every formula. -/
 theorem holds_iff_leanLTL (atom : α → History → Bool) (p : Formula α) (h : History) :
     Holds atom p h ↔ (historyTrace h ⊨ p.toLeanLTL atom) := by
   induction p generalizing h with
@@ -128,12 +128,12 @@ theorem holds_iff_leanLTL (atom : α → History → Bool) (p : Formula α) (h :
   | within scope p ih =>
     simpa [Holds, Formula.toLeanLTL] using ih (projectAtHead scope h)
 
-/-- Soundness and completeness of the actual Boolean evaluator against LeanLTL. -/
+/-- `evaluate` returns true exactly when the trace satisfies the translated formula. -/
 theorem evaluate_leanLTL_correct (atom : α → History → Bool) (p : Formula α)
     (h : History) : evaluate atom p h = true ↔ (historyTrace h ⊨ p.toLeanLTL atom) :=
   (evaluate_correct atom p h).trans (holds_iff_leanLTL atom p h)
 
-/-- Native evaluation is a constructive decision procedure for embedded LeanLTL formulas. -/
+/-- `evaluate` decides satisfaction of translated formulas. -/
 instance decidableLeanLTL (atom : α → History → Bool) (p : Formula α) (h : History) :
     Decidable (historyTrace h ⊨ p.toLeanLTL atom) :=
   decidable_of_iff (evaluate atom p h = true) (evaluate_leanLTL_correct atom p h)
@@ -143,21 +143,21 @@ theorem evaluate_eq_decide_leanLTL (atom : α → History → Bool) (p : Formula
   apply Bool.eq_iff_iff.mpr
   simp only [decide_eq_true_eq, evaluate_leanLTL_correct]
 
-/-- LeanLTL semantic entailments can discharge native policy implications. -/
+/-- An implication proved in LeanLTL carries over to `evaluate`. -/
 theorem evaluate_of_leanLTL_imp (atom : α → History → Bool) (p q : Formula α)
     (imp : TraceSet.sem_imp (p.toLeanLTL atom) (q.toLeanLTL atom)) (h : History)
     (hp : evaluate atom p h = true) : evaluate atom q h = true :=
   (evaluate_leanLTL_correct atom q h).mpr
     (imp _ ((evaluate_leanLTL_correct atom p h).mp hp))
 
-/-- Rewrites proved in LeanLTL preserve executable verdicts on every history. -/
+/-- Formulas that are equivalent in LeanLTL evaluate the same on every history. -/
 theorem evaluate_eq_of_leanLTL_eq (atom : α → History → Bool) (p q : Formula α)
     (eq : p.toLeanLTL atom = q.toLeanLTL atom) (h : History) :
     evaluate atom p h = evaluate atom q h := by
   apply Bool.eq_iff_iff.mpr
   simp only [evaluate_leanLTL_correct, eq]
 
-/-- LeanLTL's eventuality distribution law also holds for anchored metric windows. -/
+/-- `once` over a window distributes over disjunction, from LeanLTL's `finally_or_distrib`. -/
 theorem toLeanLTL_once_disj (atom : α → History → Bool) (w : Option Nat)
     (p q : Formula α) :
     (Formula.once w (.disj p q)).toLeanLTL atom =
@@ -225,7 +225,7 @@ theorem authorized_permit_leanLTL (rules : List (Rule α)) (atom : α → Histor
     ((authorize_leanLTL_correct rules atom action h).mp allowed).1
   exact ⟨r, mem, scope, effect, hp⟩
 
-/-- Replaying chronological observations gives exactly their reversed LeanLTL history. -/
+/-- Feeding events to the monitor in order and then evaluating matches LeanLTL on the reversed list. -/
 theorem replay_leanLTL_correct (m : Monitor) (events : List Event)
     (atom : α → History → Bool) (p : Formula α) :
     evaluate atom p (m.run events).history = true ↔

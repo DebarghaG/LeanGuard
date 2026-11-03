@@ -1,6 +1,7 @@
 import Lean.Meta.Tactic.Grind.RegisterCommand
 
-/-! A separate module makes grind's attribute registration available to importing elaborators. -/
+/-! Registers the `guard_rule` attribute. It lives in its own module because an attribute
+is only usable in files that import the module declaring it. -/
 
-/-- Policy lemmas for `guard_solve`, with the same modifiers and scoping as `grind`. -/
+/-- Marks a lemma for `guard_solve`. Accepts the same modifiers and scoping as `@[grind]`. -/
 register_grind_attr guard_rule

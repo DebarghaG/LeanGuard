@@ -1,9 +1,9 @@
-"""Offline native-policy injection into published, fixed tool trajectories.
+"""Audit published tool trajectories offline against the native policies.
 
-No environment tool, embedded expression, reward verifier, or model is executed.
-Only earlier recorded observations become facts. A blocked call's recorded outcome
-still advances the shadow history: later verdicts are conditional on the original
-trajectory, not a counterfactual continuation after enforcement.
+No environment tool, embedded expression, reward verifier or model is run. Facts
+come only from earlier recorded observations. A blocked call's recorded outcome
+still enters the history, so later verdicts describe the trajectory as it
+actually happened.
 """
 
 from __future__ import annotations
@@ -83,10 +83,10 @@ def failed(message, value):
 
 
 def paired_responses(calls, responses):
-    """Match IDs first; absent IDs use τ²'s serial, same-batch output ordering.
+    """Pair calls with results by ID, falling back to τ²'s serial batch order.
 
-    Only a complete batch permits positional matching. A conflicting ID never
-    falls back to position. Missing/ambiguous results remain unresolved.
+    Positional pairing is used only for a complete batch, and never when IDs
+    conflict. Missing or ambiguous results stay unpaired.
     """
     result = [(None, "missing_or_ambiguous")] * len(calls)
     used = set()
@@ -113,7 +113,7 @@ def paired_responses(calls, responses):
 
 
 class Observations:
-    """Partial state from tool outputs; absent facts stay absent (including collections)."""
+    """Partial state built from tool outputs. Facts never observed stay absent, collections included."""
 
     def __init__(self, domain):
         self.domain = domain
@@ -245,7 +245,7 @@ class Observations:
     def invalidate(self, action, args, mutating, supported):
         o = self.objects
         if not supported:
-            # Arbitrary code/unknown tools may mutate any object. Do not trust stale state.
+            # Code execution and unknown tools can change anything, so drop cached state.
             for collection in o.values():
                 collection.clear()
             self.lookup_results.clear()
@@ -584,7 +584,7 @@ def replay(record, engine, schemas, mutating, journal):
                 0, {**request, "kind": "dispatch", "input": native_args, "facts": native_facts}
             )
             unsupported_history = unsupported_history or not supported
-            # Even an error from a mutator/unknown tool does not certify no partial write.
+            # An error from a write or unknown tool can still leave a partial write.
             state.invalidate(
                 action, args if isinstance(args, dict) else {}, action in mutating, supported
             )
@@ -598,7 +598,7 @@ def replay(record, engine, schemas, mutating, journal):
                         )
                 if outcome_resource != resource:
                     # Lookup resource resolution occurs at its outcome, never before its verdict.
-                    # These imported events are audit contexts, not a runtime admission journal.
+                    # These events only feed audits; they never enter an admission journal.
                     diagnostics["lookup_resource_resolved_at_outcome"] += 1
                     history[0]["resource"] = history[1]["resource"] = outcome_resource
                 history.insert(

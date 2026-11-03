@@ -1,7 +1,7 @@
-"""Read-only auditing of normalized, chronological recorded histories.
+"""Read-only auditing of normalized, oldest-first recorded histories.
 
-Recorded outcomes advance history even after a denial. No backend is executed and
-no dispatch, consent, identity, or missing outcome is inferred or synthesized.
+Recorded outcomes stay in the history even after a denied call. Nothing is
+executed, and no dispatch, consent, identity or missing outcome is filled in.
 """
 
 from collections.abc import Iterable, Iterator, Sequence
@@ -54,12 +54,12 @@ def audit(
     history_complete: bool = True,
     missing_evidence: Sequence[str] = (),
 ) -> AuditResult:
-    """Audit a request against prior events, oldest first, without changing the monitor.
+    """Audit one request against the events before it (oldest first). Changes nothing.
 
-    `history_complete` and `missing_evidence` describe the caller's evidence coverage;
-    the monitor cannot infer whether an omitted consent/fact existed in reality.
-    Native decisions are conditional on the supplied data. Inspect `assessment`
-    before treating a denial as evidence of a violation in a source trajectory.
+    Use `history_complete` and `missing_evidence` to say what the trace lacks; the
+    engine can't tell whether an omitted consent or fact really happened. The
+    decision is only as good as the data, so check `assessment` before reading a
+    denial as a violation.
     """
     _validate(request)
     if request["kind"] != "request":
@@ -110,11 +110,10 @@ def replay(
     *,
     history_complete: bool = True,
 ) -> Iterator[AuditResult]:
-    """Yield one audit per recorded request. All recorded events remain in history.
+    """Yield one audit per recorded request, keeping every event in the history.
 
-    A trace record may carry `missing_evidence`, a list of missing evidence labels;
-    this uncertainty is conservatively retained for subsequent requests as well.
-    Host.events() supplies the normalized event format, including dispatches/facts.
+    A record may list `missing_evidence` labels; they carry over to every later
+    request. `GuardHost.events()` produces records in this format.
     """
     history = []
     missing = []

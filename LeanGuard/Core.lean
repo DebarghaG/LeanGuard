@@ -22,9 +22,9 @@ structure Event where
   amount : Nat := 0
   inputJson : String := "{}"
   outputJson : String := "null"
-  /-- Authoritative pre-dispatch snapshot, retained on the matching outcome. -/
+  /-- The backend snapshot taken at admission. The matching outcome carries a copy. -/
   factsJson : String := "{}"
-  /-- Trusted workload identity and delegation scope; empty for legacy tool callers. -/
+  /-- Host-assigned agent identity and delegation. Empty for single-agent callers. -/
   actor : String := ""
   workflow : String := ""
   delegation : String := ""
@@ -100,7 +100,7 @@ def evaluate (atom : α → History → Bool) : Formula α → History → Bool
         (List.range i).all (fun j ↦ evaluate atom p (h.drop j))
   | .within scope p, h => evaluate atom p (projectAtHead scope h)
 
-/-- A separate propositional specification of the executable temporal evaluator. -/
+/-- Propositional meaning of a formula, written independently of `evaluate`. -/
 def Holds (atom : α → History → Bool) : Formula α → History → Prop
   | .atom a, h => atom a h = true
   | .top, _ => True
@@ -180,7 +180,7 @@ theorem authorized_no_forbid (rules : List (Rule α)) (atom : α → History →
     exact ⟨r, mem, by simp [scope, effect, value]⟩
   simp [authorize, present] at allowed
 
-/-- A dispatch is added only after all native checks and the outer error gate succeed. -/
+/-- Appends a dispatch event to the history when, and only when, the call was allowed. -/
 def reserve (allowed : Bool) (request : Event) (h : History) : History :=
   if allowed then { request with kind := "dispatch" } :: h else h
 
@@ -191,7 +191,7 @@ theorem reservation_retained (request : Event) (h : History) :
 theorem deny_no_reservation (request : Event) (h : History) :
     reserve false request h = h := by simp [reserve]
 
-/-- Unknown or absent external decisions may only restrict the native decision. -/
+/-- Combines the native verdict with an optional external one. A missing external verdict denies. -/
 def combineExternal (native : Bool) (external : Option Bool) : Bool :=
   native && external.getD false
 
@@ -200,7 +200,7 @@ theorem external_cannot_override (native : Bool) (external : Option Bool)
   simp [combineExternal] at h
   exact h.1
 
-/-- A monitor checkpoint retains exactly the observed history in v1. -/
+/-- The monitor's state is just the history it has observed. -/
 structure Monitor where
   history : History := []
 

@@ -36,7 +36,7 @@ def paymentRequest : Formula Check := check "overdue_and_no_other_payment_reques
     (← str bill "status") == "Overdue" &&
     (← Data.all bills fun b ↦ do return (← str b "status") != "Awaiting Payment")
 
-/-- A recorded bill must expose the target's identity, status and amount. -/
+/-- A bill counts as seen only if a lookup returned its ID, customer, status and amount. -/
 def billRecorded (customer id : String) (bill : Json) : Bool :=
   (str bill "bill_id").toOption == some id &&
   (str bill "customer_id").toOption == some customer &&

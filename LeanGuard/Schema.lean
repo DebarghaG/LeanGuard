@@ -3,7 +3,7 @@ import LeanGuard.Policy
 namespace LeanGuard
 open Lean
 
-/-- Native schema values; schemas are compiled alongside policies, never agent supplied. -/
+/-- A tool input schema. Schemas are compiled into the policy binary. -/
 inductive Schema where
   | any | string | integer | number | boolean | null
   | enum : List Json → Schema
@@ -33,7 +33,7 @@ def Schema.valid : Nat → Schema → Json → Bool
     | _ => false
   | fuel + 1, .alternatives choices, j => choices.any (fun ty ↦ ty.valid fuel j)
 
-/-- The compiled schema subset, including the evaluator's explicit depth limit. -/
+/-- Renders a schema as a JSON Schema object. -/
 def Schema.toJson : Schema → Json
   | .any => Json.mkObj []
   | .string => Json.mkObj [("type", "string")]

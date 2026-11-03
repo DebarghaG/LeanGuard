@@ -4,11 +4,11 @@ import LeanGuard.Audit
 namespace LeanGuard.Experimental.Adversarial
 open Lean Meta Elab Tactic
 
--- Failure and state-inspection tests deliberately leave later tactics unreachable or unchanged.
+-- Some tests here fail on purpose or inspect state, so later tactics are unreachable or unused.
 set_option linter.unreachableTactic false
 set_option linter.unusedTactic false
 
--- A well-typed expression is not necessarily a proof of the assigned goal.
+-- A term can type-check and still prove the wrong goal.
 run_cmd Command.liftTermElabM do
   let goal ← mkFreshExprSyntheticOpaqueMVar (mkConst ``False)
   goal.mvarId!.assign (mkConst ``True.intro)
@@ -42,13 +42,13 @@ theorem multipattern_conjunction (n m : Nat) : leftPredicate n ∧ rightPredicat
   guard_solve
 end
 
--- Preserve direct evidence instead of evaluating an expensive decidable proposition.
+-- A hypothesis already proves this; `decide` would run out of recursion depth.
 set_option maxRecDepth 128 in
 theorem existing_evidence (h : (List.replicate 10000 true).all id = true) :
     (List.replicate 10000 true).all id = true := by
   guard_solve
 
--- Validation must not itself instantiate a caller's metavariable.
+-- Checking a proof must not assign the caller's metavariables.
 run_cmd Command.liftTermElabM do
   let type ← mkFreshExprMVar (mkSort Level.zero)
   let goal ← mkFreshExprSyntheticOpaqueMVar type
@@ -97,7 +97,7 @@ theorem forward_policy_facts (pack : PolicyPack) (ctx : Context)
       validationErrors pack ctx = [] := by
   guard_solve
 
--- Catch without TacticM's automatic backtracking, so the adapter must restore itself.
+-- Catch the error without TacticM's backtracking, so the tactic has to roll itself back.
 theorem transaction_rollback : True := by
   run_tac
     let goal ← getMainGoal
@@ -123,7 +123,7 @@ theorem transaction_rollback : True := by
         throwError "failed transaction leaked proof state, goals, declarations, or errors"
   trivial
 
--- Exercise rollback around grind's own exception path, which admits its temporary goal.
+-- When grind throws, it admits its temporary goal first. Check that we still roll back.
 theorem protected_failure_rollback : True := by
   run_tac
     let goal ← getMainGoal
@@ -171,7 +171,7 @@ theorem default_cases (x : Choice) : x = .first ∨ x = .second := by
   guard_solve
 end
 
--- Public syntax errors must fail locally and preserve the caller's goal.
+-- A bad argument should fail here and leave the caller's goal as it was.
 theorem repair_input_errors : ∃ n : Nat, n = 40 := by
   fail_if_success guard_repair? []
   fail_if_success guard_repair? [40] with [] using rfl

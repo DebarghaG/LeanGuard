@@ -1,7 +1,8 @@
 import LeanGuard.MultiAgent
 
-/-! A2A wire normalization and protocol-specific policies. Authority and task phases
-remain protocol-independent in MultiAgent; no remote payload can issue a grant. -/
+/-! Normalizes A2A wire messages and defines the A2A-specific policies. Grants and task
+phases live in `MultiAgent`, which knows nothing about the wire format. Nothing a remote
+peer sends can issue a grant. -/
 namespace LeanGuard.A2A
 open Lean Data MultiAgent
 
@@ -39,7 +40,7 @@ def taskAccess (s : State) (e : Event) (args : Json) : Except String Unit := do
   else if (← str payload "id") != id then throw "payload task mismatch"
   if id.isEmpty then
     if e.action != "a2a.send" then throw "task identifier required"
-    -- A context alone cannot establish ownership of an existing conversation.
+    -- A context ID by itself doesn't show that the sender owns that conversation.
     if !context.isEmpty && !(s.contexts.any fun t ↦ t.peer == e.peer &&
         t.id == context && t.principal == e.principal && t.actor == e.actor &&
         t.workflow == e.workflow && t.delegation == e.delegation && t.resource == e.resource) then
@@ -84,8 +85,8 @@ def noMessageReplay : Formula Check := check "unique_peer_message" fun c ↦ do
     ((Json.parse e.inputJson).bind fun args ↦ do
       str (← field (← field args "payload") "message") "messageId").toOption == some message)
 
-/-- Updates are evidence about an already admitted operation, never new authority.
-Poll snapshots may skip intermediate states. A terminal task cannot be restarted. -/
+/-- Records a task update for an operation that was already admitted. Updates never
+grant authority. Polls may skip intermediate states, and a finished task stays finished. -/
 def updateTask (s : State) (e : Event) (output : Json) : Except String State := do
   let task := (output.getObjVal? "task").toOption
   let status := (output.getObjVal? "statusUpdate").toOption

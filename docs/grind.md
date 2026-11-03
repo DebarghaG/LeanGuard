@@ -1,188 +1,220 @@
-# Borrowing grind for policy reasoning
+# How the repair experiment uses grind
 
-This investigation follows Lean master at
-[`3baf82028468b3529ca83b20393596ec86828df6`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6),
-dated 2026-09-23, and checks the integration against LeanGuard's pinned Lean **4.33.1**
-(`819816b2e0a3bf405af45ae5c7af2491d8f5bee6`). The implementation imports the pinned
-engine; it does not vendor source from master. These are internal Lean APIs, so a
-toolchain upgrade needs the repair regression suite.
+The [repair experiment](../examples/repair/README.md) needs to prove goals like
+"amount 40 is at most 70 and the policy allows it." That mixes arithmetic over a
+hypothesis with a concrete policy computation, and sometimes needs a policy author's
+own lemmas as well. Lean's `grind` tactic already contains most of the machinery for
+this: normalization, congruence closure, theorem instantiation, arithmetic and case
+splitting, all producing real proofs. This note explains which parts of grind
+`guard_solve` reuses, and where the edges of that reuse are.
 
-## Where the implementation lives
+The reading below follows Lean master at
+[`3baf82028468b3529ca83b20393596ec86828df6`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6)
+(2026-09-23). LeanGuard itself builds against its pinned Lean 4.33.1
+(`819816b2e0a3bf405af45ae5c7af2491d8f5bee6`) and imports grind from that toolchain
+rather than vendoring code from master. Because these are internal Lean APIs, run
+the repair regression suite after any toolchain upgrade.
+
+## Where grind lives
+
+grind's source is split across three directories, and reading only the first gives
+a misleading picture.
 
 [`Init/Grind`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6/src/Init/Grind)
-is the logical foundation, not the search engine. `Norm.lean` supplies normalization
-equalities; `Lemmas.lean`, `Cases.lean`, and the arithmetic modules supply proof-building
-lemmas. `Ring`, `Module`, `Ordered`, `Order`, and `AC` specify the algebraic laws the
-solvers require. Syntax and configuration also live here. These laws justify generated
-proofs; recognizing an operator's name alone does not justify reasoning about it.
+holds the logical foundation. `Norm.lean` supplies the normalization equalities;
+`Lemmas.lean`, `Cases.lean` and the arithmetic modules supply the lemmas proofs are
+built from; `Ring`, `Module`, `Ordered`, `Order` and `AC` state the algebraic laws
+each solver relies on. Syntax and configuration are defined here too. These laws
+are what justify a generated proof: grind reasons about an operator because it has
+an instance of the right structure, never because it recognizes the operator's name.
 
-The engine is in
-[`Lean/Meta/Tactic/Grind`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6/src/Lean/Meta/Tactic/Grind).
-The frontend is in
+The search engine itself is in
+[`Lean/Meta/Tactic/Grind`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6/src/Lean/Meta/Tactic/Grind),
+and the tactic frontend in
 [`Lean/Elab/Tactic/Grind`](https://github.com/leanprover/lean4/tree/3baf82028468b3529ca83b20393596ec86828df6/src/Lean/Elab/Tactic/Grind).
-Reading only `Init/Grind` misses theorem indexing, the equality graph, search control,
-and proof reconstruction.
+Theorem indexing, the equality graph, search control and proof reconstruction are
+all in these two.
 
 ## One goal through the engine
 
-1. **Elaborate parameters.** `Elab/Tactic/Grind/Main.lean::mkGrindParams` assembles a
-   `Grind.Params`: configuration, theorem extensions, explicit facts and lemmas,
-   normalization context, simprocs, symbol priorities, and optional anchors.
-   `Param.lean` handles theorem directions, local proof terms, definitions' equation
-   theorems, extension names, and exclusions. Parameter elaboration is reusable.
+1. Elaborate parameters. `Elab/Tactic/Grind/Main.lean::mkGrindParams` assembles a
+   `Grind.Params` from the configuration, theorem extensions, explicit facts and
+   lemmas, normalization context, simprocs, symbol priorities and optional anchors.
+   `Param.lean` handles theorem directions, local proof terms, the equation theorems
+   of definitions, extension names and exclusions. All of this can be reused from
+   outside the `grind` tactic.
 
-2. **Protect the surrounding proof.** `Meta/Tactic/Grind/Main.lean::withProtectedMCtx`
-   creates a fresh goal at a new metavariable depth. Definitional equality tests cannot
-   opportunistically assign metavariables belonging to the caller. It resolves internal
-   delayed assignments before returning the proof. Its exception path admits the
-   temporary goal and rethrows: a speculative caller must restore its saved state on
-   failure. A successful call alone is insufficient if other obligations remain.
+2. Protect the caller's proof state. `Meta/Tactic/Grind/Main.lean::withProtectedMCtx`
+   runs on a fresh goal at a deeper metavariable depth, so definitional-equality
+   checks can't quietly assign metavariables that belong to the caller. It resolves
+   its own delayed assignments before returning a proof. On an exception it admits
+   the temporary goal and rethrows, which means a caller that is trying things
+   speculatively has to restore its own saved state when an attempt fails. And a
+   successful call only closes the one goal it was given; any other obligations are
+   still the caller's.
 
-3. **Normalize and internalize.** `initCore` unfolds reducible definitions, beta-reduces,
-   and processes hypotheses; `assertExtra` adds explicit facts and activates lemmas.
-   `Simp.lean::preprocessImpl` uses grind's normalizer, then canonicalizes projections,
-   nested proofs, universe levels, and shared expressions. Rewrite proofs are composed
-   with `Eq.mp`. The normalizer's discharger deliberately avoids assumptions so its
-   cache remains valid across search branches. This is different from repeatedly
-   invoking `simp_all`.
+3. Normalize and internalize. `initCore` unfolds reducible definitions,
+   beta-reduces and processes hypotheses, and `assertExtra` adds explicit facts and
+   activates lemmas. `Simp.lean::preprocessImpl` runs grind's normalizer, then
+   canonicalizes projections, nested proofs, universe levels and shared subterms,
+   composing the rewrite proofs with `Eq.mp`. The normalizer's discharger deliberately
+   ignores local assumptions, which keeps its cache valid across search branches. This
+   is a different thing from calling `simp_all` over and over.
 
-4. **Maintain a proof-producing equality graph.** `Types.lean::ENode` and `GoalState`
-   retain equivalence classes, parent links, congruence tables, generations, pending
-   facts, splitting state, and each theory solver's state. `Internalize.lean` registers
-   terms and opportunities for propagation. `Core.lean` merges classes, removes and
-   reinserts affected parents, and wakes propagators and solvers. Proof edges record
-   why terms are equal. Proposition truth is represented by equality with `True` or
-   `False`; equating those closes the goal. Some congruence proofs are delayed until
-   needed, with distinct markers for ordinary and symmetric equality congruence.
+4. Maintain an equality graph that produces proofs. `Types.lean::ENode` and
+   `GoalState` keep the equivalence classes, parent links, congruence tables,
+   generations, pending facts, splitting state and each theory solver's state.
+   `Internalize.lean` registers terms and the propagation they can trigger;
+   `Core.lean` merges classes, reinserts the affected parents, and wakes propagators
+   and solvers. Every merge records why two terms are equal. A proposition is known to
+   be true or false when it is equal to `True` or `False`, so equating `True` with
+   `False` closes the goal. Some congruence proofs are built lazily, with separate
+   markers for ordinary and symmetric equality congruence.
 
-5. **Instantiate relevant lemmas.** `Theorems.lean` indexes lemmas by symbols in their
-   patterns. A lemma activates when the required symbols occur, rather than scanning
-   every theorem for every fact. `EMatchTheorem.lean` infers normalized patterns;
-   `EMatch.lean` matches them modulo known equalities, supports multipatterns, supplies
-   typeclass arguments, and constructs actual applications of the original theorem.
-   Instance deduplication and modification times avoid repeated work. New terms get
-   higher generations, so `gen`, `genLocal`, `instances`, and `ematch` bound different
-   sources of growth. Explicit `grind_pattern` constraints can delay an instance until
-   a guard is known or restrict term depth, size, or instance count.
+5. Instantiate relevant lemmas. `Theorems.lean` indexes lemmas by the symbols in
+   their patterns, so a lemma only wakes up once those symbols appear in the goal
+   instead of being tried against every fact. `EMatchTheorem.lean` infers normalized
+   patterns, and `EMatch.lean` matches them modulo the equalities known so far. It
+   supports multipatterns, fills in typeclass arguments, and builds genuine
+   applications of the original theorem. Deduplication and modification times avoid
+   repeated work. Each new term gets a higher generation, and the `gen`, `genLocal`,
+   `instances` and `ematch` limits each bound a different source of growth. A
+   `grind_pattern` constraint can hold an instance back until a guard is known, or
+   cap term depth, size or instance count.
 
-6. **Coordinate theory solvers.** `SolverExtension` supplies hooks for internalization,
-   new equalities/disequalities, solver actions, and model-based theory combination.
-   `Solvers.mkActionCore` combines solver actions, and `Solvers.mkAction` drains their
-   pending facts. Arithmetic, order, and AC solvers exchange proved facts through the
-   same graph. Cutsat's proof builder reconstructs a Lean proof from its derivation,
-   tracking only relevant variables and polynomials; a solver model is not a proof.
+6. Coordinate theory solvers. A `SolverExtension` supplies hooks for
+   internalization, new equalities and disequalities, solver actions and model-based
+   theory combination. `Solvers.mkActionCore` combines the solvers' actions and
+   `Solvers.mkAction` drains their pending facts, so the arithmetic, order and AC
+   solvers all exchange proved facts through the same graph. Cutsat's proof builder
+   turns its derivation back into a Lean proof, tracking only the variables and
+   polynomials that mattered. A solver's model alone never counts as a proof.
 
-7. **Schedule search.** `Finish.lean::Action.mkFinish` builds:
+7. Schedule the search. `Finish.lean::Action.mkFinish` builds this loop:
 
    ```text
    intros; assertAll;
    repeat (theory solvers <|> instantiate <|> splitNext <|> mbtc)
    ```
 
-   This is not ordinary tactic backtracking. `Action` has separate continuations for
-   inapplicability and progress; `<|>` tries the right action only when the left is
-   inapplicable. An action can run the remaining search on several branches and inspect
-   their proofs. `Split.lean::splitCore` implements non-chronological backtracking:
-   when a branch's contradiction does not use its case assumption, it closes the
-   unsplit goal directly. `splits` bounds branch search, not all normalization work.
+   The `<|>` here is grind's own combinator rather than ordinary tactic backtracking.
+   An `Action` has separate continuations for "not applicable" and "made progress",
+   and the right-hand action runs only when the left one was not applicable. An
+   action can also run the rest of the search on several branches and look at the
+   proofs that come back. `Split.lean::splitCore` uses that for non-chronological
+   backtracking: if a branch's contradiction never used the case assumption, it
+   closes the goal before the split directly. The `splits` limit bounds branching,
+   but not the normalization work inside each branch.
 
-8. **Report or replay.** `Grind.Result` retains a stuck goal, issues, counters, and
-   split/instantiation diagnostics. In trace mode, actions also return tactic syntax.
-   `EMatchAction.lean` tracks theorem-instance markers in the resulting proof, then
-   replay-tests a reduced set of parameters. Merely collecting constants used by the
-   proof is not sufficient: an otherwise unused instantiation may introduce terms
-   needed by later matching. `CollectParams.lean` and the elaborator turn the trace
-   into `grind only [...]` suggestions. Trace mode can insert `sorry` on unfinished
-   branches when `useSorry` is enabled, so a repair tactic must disable it.
+8. Report or replay. `Grind.Result` carries any stuck goal, issues, counters and
+   diagnostics about splits and instantiations. In trace mode, actions also return
+   tactic syntax. `EMatchAction.lean` tracks which theorem instances appear in the
+   final proof and then replay-tests a reduced parameter set. Collecting the
+   constants a proof uses isn't enough for this, because an instantiation that
+   appears nowhere in the proof may still have introduced a term that a later match
+   needed. `CollectParams.lean` and the elaborator turn the trace into
+   `grind only [...]` suggestions. With `useSorry` enabled, trace mode may fill
+   unfinished branches with `sorry`, so a repair tactic has to switch it off.
 
-## What LeanGuard reuses
+## What `guard_solve` reuses
 
-| Component | Integration | Benefit |
+| grind component | Used by | What it buys |
 | --- | --- | --- |
-| `register_grind_attr` | `guard_rule` in `Experimental/Rules.lean` | Scoped, indexed policy lemma registration with grind's existing modifiers |
-| `Grind.mkParams`, `elabGrindParams`, `getLiaExtensions` | `GuardSolver.mkParams` follows the frontend's parameter assembly | Explicit hints plus a small arithmetic database and structural support |
-| `Grind.main` | Symbolic leaves of `guard_solve` | Shared normalization, congruence closure, E-matching, splitting, arithmetic, order, and AC reasoning |
-| `withProtectedMCtx` | The entire `guard_solve` attempt | Isolation from surrounding existential witnesses, including during assumption search and computation |
-| `Grind.Result.toMessageData` | Failed obligations | Actual engine diagnostics instead of silently swallowing every exception |
+| `register_grind_attr` | `guard_rule` in `Experimental/Rules.lean` | A scoped, indexed policy-lemma database with grind's usual modifiers |
+| `Grind.mkParams`, `elabGrindParams`, `getLiaExtensions` | `GuardSolver.mkParams`, which mirrors the frontend's parameter assembly | Explicit hints, plus a small arithmetic database and structural support |
+| `Grind.main` | The symbolic leaves of `guard_solve` | Shared normalization, congruence closure, E-matching, splitting, and arithmetic, order and AC reasoning |
+| `withProtectedMCtx` | The whole `guard_solve` attempt | The caller's existential witnesses stay untouched, including during assumption search and computation |
+| `Grind.Result.toMessageData` | Failed obligations | The engine's own diagnostics are shown to the user |
 | Saved tactic state and `TryThis` | Candidate search | Ordered attempts, rollback, and a replayable proof of the chosen witness |
 
-The old default made up to ten unrelated tactic attempts per candidate. The new
-default first uses existing hypotheses, then computes decidable goals, decomposes
-conjunctions when needed, and sends symbolic obligations to this configured engine.
-If decomposition fails, it retries the unsplit conjunction so multipattern rules
-can match terms from both sides. Decomposition matters for a goal
-such as `40 ≤ proposed ∧ (decidePolicy pack frozenContext).allow = true`: one conjunct
-needs a hypothesis and arithmetic, while the other is a concrete policy computation.
-The full policy predicate, including its validation-error gate, stays in the goal.
+`guard_solve` tries cheap things first. It looks for a hypothesis that already
+proves the goal, then tries `decide` on goals it can compute, then splits explicit
+conjunctions, and only sends what's left to the configured grind engine. If
+splitting a conjunction fails, it retries the whole conjunction so that a
+multipattern rule can match terms from both sides.
 
-The default database includes the full decision/LeanLTL equivalence and the existing
-theorems extracting authorization and error-freedom from an allowed decision. A
-policy author can add a proved symbolic characterization of their own policy with
-`@[guard_rule =]`, or a forward rule with `@[guard_rule →]`. A rule's description
-string never enters the theorem database as evidence.
+The split matters for a goal like
+`40 ≤ proposed ∧ (decidePolicy pack frozenContext).allow = true`. The first half
+needs a hypothesis and arithmetic; the second is a concrete policy computation that
+`decide` can finish. Either way, the full policy predicate stays in the goal,
+validation-error gate included.
 
-The default limits are four splits, three E-matching rounds per split phase, term
-generation six, and 256 instances per branch. Lean's heartbeat and recursion limits
-still apply. This bounds search without suggesting it is complete. Failed candidates
-are **unproved**, not certified impossible; a negated repair theorem remains a separate
-proof obligation. Candidate order expresses preference, not optimality.
+Out of the box, the rule database contains the equivalence between the runtime
+decision and its LeanLTL meaning (`decision_leanLTL_correct`), plus the theorems
+that read authorization and error-freedom off an allowed decision (`decision_sound`,
+`decision_no_errors`). A policy author can register a proved symbolic
+characterization of their own policy with `@[guard_rule =]`, or a forward rule with
+`@[guard_rule →]`. A rule's description string is never part of the theorem
+database.
 
-## Adversarial audit
+The defaults are 4 splits, 3 E-matching rounds per split phase, term generation 6,
+and 256 instances per branch, on top of Lean's usual heartbeat and recursion limits.
+They keep the search bounded, so the search is incomplete: a candidate that fails is
+unproved, and showing it impossible would need a separate proof of the negated goal.
+Candidate order expresses the caller's preference and implies nothing about
+optimality.
 
-The audit found and repaired six defects, each with a failing reproducer in
-[Adversarial.lean](../examples/repair/Adversarial.lean):
+## Regression checks
 
-| Defect | Correction |
+[Adversarial.lean](../examples/repair/Adversarial.lean) contains one failing
+reproducer for each way a proof-search wrapper like this can accept something it
+shouldn't, or leave the caller's state broken:
+
+| What the test tries | What `guard_solve` does about it |
 | --- | --- |
-| A well-typed term for the wrong proposition passed validation | Check the proof against the goal's expected type |
-| A used local definition could hide `sorry` | Close over used local declarations before inspecting proof dependencies |
-| Conjunction decomposition prevented cross-conjunct multipatterns | Roll back failed decomposition and try the whole conjunction |
-| Computation exhausted recursion even when a hypothesis already proved the goal | Try `assumptionCore` before `decide` |
-| A discharger that logged an error could still be accepted | Capture messages and reject error-producing attempts |
-| Case exclusions silently left rules in secondary databases | Consolidate case registrations before each parameter is elaborated |
+| A well-typed term whose type is a different proposition | Checks the proof against the goal's expected type |
+| A local definition that hides a `sorry` | Closes over the local declarations the proof uses before scanning its dependencies |
+| A multipattern rule that needs terms from both conjuncts | Rolls back a failed split and retries the whole conjunction |
+| A goal that a hypothesis proves but `decide` would exhaust recursion on | Tries `assumptionCore` before `decide` |
+| A discharger that logs an error and then "succeeds" | Captures messages and rejects any attempt that produced an error |
+| A case exclusion that only removes rules from the first database | Consolidates case registrations before elaborating each parameter |
 
-Wrong-type acceptance was a frontend validation defect; Lean's final kernel check
-still rejected such a declaration.
+In the first case Lean's kernel would still reject the final declaration; the check
+in `guard_solve` makes the failure show up at the candidate that caused it.
 
-The last correction is needed because the pinned `eraseCasesTypes` only removes
-entries from extension zero. The adapter still uses `elabGrindParams` for every
-parameter and follows `mkGrindParams`' ordering for suggestions, local lemmas, and
-anchors. Consolidation preserves eager splitting and supports subsequent database
-parameters and reintroduction of excluded rules.
+The last case exists because the pinned `eraseCasesTypes` removes entries only from
+extension zero. `guard_solve` still runs `elabGrindParams` on every parameter, and
+follows the ordering of `mkGrindParams` for suggestions, local lemmas and anchors.
+Consolidating first keeps eager splitting working, and lets later parameters add
+databases or bring an excluded rule back.
 
-One shared transaction validates completed proofs and restores failed attempts,
-including runtime exceptions. Direct tests catch exceptions without tactic
-backtracking and check goals, assignments, declarations, and error messages.
-Repeated recursive proof validation and redundant exception checks were removed.
-Tests for failure rollback that relied on `fail_if_success` were replaced with these
-direct checks; that combinator restores state itself and can mask a broken transaction.
-The verification script runs both regression files and the existing repair/stress suites.
+A single transaction wraps each attempt. It validates a completed proof and restores
+the saved state when an attempt fails, including when it fails with a runtime
+exception. The tests catch exceptions directly, without relying on tactic
+backtracking, and then inspect goals, assignments, declarations and error messages.
+They avoid `fail_if_success`, which restores state on its own and would hide a
+broken transaction. `scripts/verify.py` runs both regression files together with the
+repair and temporal stress suites.
 
-## Boundaries and later extensions
+## Limits and possible extensions
 
-* The public-looking `grind_propagator` syntax is explicitly marked **not implemented**
-  in upstream `Init/Grind/Propagator.lean`. Builtin propagators exist, but they are not
-  a supported external policy-plugin surface. Use proved rules first.
-* Solver extensions must register during initialization and maintain engine invariants.
-  A custom temporal solver would need proof reconstruction and measured evidence that
-  theorem instantiation is inadequate. The current adapter uses the existing proved
-  full-policy correspondence and decidability instead.
-* `grind` is chiefly a refutation engine for a supplied goal. Its arithmetic models
-  are not an edit synthesizer. This change retains explicit witness candidates; it
-  does not invent trusted observations, confirmations, histories, or optimal edits.
-* The theorem sets are separated, but upstream normalization and symbol priorities
-  are shared between grind attributes. `guard_rule` is not a hermetic solver sandbox.
-* Engine state is fresh for each symbolic obligation and candidate. Sharing theorems
-  and normalization setup is possible, but reusing an equality graph across changed
-  witnesses would require careful dependency invalidation. There is no cross-candidate
-  cache here.
-* We emit the successful `exact ⟨candidate, by guard_solve ...⟩` (or custom discharger)
-  and test replay. We do not claim minimal proofs or reuse `grind?`'s trace minimizer
-  yet. That would require its replay checks and explicit handling of partial traces.
-* Custom dischargers are ordinary Lean metaprograms. The transaction restores Lean's
-  saved elaborator state, not external IO performed by user-supplied tactics.
-* Master already differs from 4.33.1, including homomorphism handling and removal of
-  the former `ToInt` implementation. Importing the pinned APIs avoids mixing those
-  representations or assuming master-only features exist in LeanGuard.
+* Upstream marks the `grind_propagator` syntax in `Init/Grind/Propagator.lean` as
+  not implemented. Builtin propagators exist, but there is no supported way for a
+  policy plugin to add one, so proved rules are the extension point.
+* Solver extensions have to register during initialization and maintain the engine's
+  invariants. A custom temporal solver would need proof reconstruction, and it would
+  only be worth writing if theorem instantiation turned out to be inadequate in
+  practice. `guard_solve` relies instead on the proved correspondence between the full
+  policy and LeanLTL, together with its decidability.
+* grind refutes a goal you give it. Its arithmetic models can't synthesize edits, so
+  the caller still supplies explicit witness candidates. `guard_solve` never invents
+  trusted observations, confirmations, histories, or an optimal edit.
+* `guard_rule` keeps its own theorem set, but normalization and symbol priorities are
+  shared with every other grind attribute, so it is not a sealed sandbox.
+* Each symbolic obligation and each candidate starts from fresh engine state. Theorems
+  and normalization setup could be shared, but reusing an equality graph across
+  different witnesses would need careful invalidation of dependent facts, so there is
+  no cross-candidate cache.
+* `guard_repair?` emits the successful `exact ⟨candidate, by guard_solve ...⟩` (or the
+  custom discharger) and tests that it replays. It does not minimize the proof. Reusing
+  `grind?`'s trace minimizer would mean adopting its replay checks and handling partial
+  traces explicitly.
+* Custom dischargers are ordinary Lean metaprograms. On failure the transaction
+  restores Lean's elaborator state, but it can't undo IO that a user-supplied tactic
+  performed.
+* Master has already moved away from 4.33.1 in places, for example in homomorphism
+  handling and the removal of the old `ToInt` implementation. Importing the pinned APIs
+  keeps those representations from mixing and avoids depending on features that exist
+  only on master.
 
-Usage and regression commands are in [the repair guide](../examples/repair/README.md).
+Usage and the regression commands are in [the repair guide](../examples/repair/README.md).

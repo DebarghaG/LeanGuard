@@ -4,20 +4,20 @@ import LeanGuard.PolicyProofs
 /-!
 # Repair goals stated in LeanLTL
 
-The existing correspondence theorem supplies constructive decidability for a full
-policy's LeanLTL meaning. This opt-in adapter lets ordinary `decide` (and therefore
-`guard_repair?`) handle the policy goal without changing the policy or its semantics.
+A policy's LeanLTL meaning is decidable because it agrees with the runtime decision.
+This module registers that instance, so `decide`, and therefore `guard_repair?`, can
+prove goals stated as LeanLTL satisfaction.
 -/
 
 namespace LeanGuard.Experimental
 
-/-- Decide complete policy satisfaction using the already-proved runtime equivalence. -/
+/-- Decides LeanLTL policy satisfaction by running the policy. -/
 instance decidablePolicyLeanLTL (pack : PolicyPack) (ctx : Context) :
     Decidable (historyTrace ctx.history ⊨ pack.toLeanLTL ctx) :=
   decidable_of_iff ((decidePolicy pack ctx).allow = true) (decision_leanLTL_correct pack ctx)
 
-/-- Repair existence is unchanged by stating compliance in LeanLTL instead of the allow bit.
-The caller's edit contract is retained, for every policy, context family, and history. -/
+/-- A repair exists for the LeanLTL goal exactly when one exists for the allow bit, with
+the same edit constraint. -/
 theorem repair_iff_leanLTL (pack : PolicyPack) (context : α → Context) (permitted : α → Prop) :
     (∃ edit, permitted edit ∧ (decidePolicy pack (context edit)).allow = true) ↔
       ∃ edit, permitted edit ∧

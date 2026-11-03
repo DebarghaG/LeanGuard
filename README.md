@@ -1,22 +1,25 @@
 # LeanGuard
 
-Agent tool guardrails written and evaluated in Lean 4. Policies are ordinary Lean
-declarations, not a separate language translated into Lean. A small Python host
-intercepts tool calls, obtains trusted observations, records admission durably, and
-dispatches only after the native engine permits the call.
+LeanGuard sits between an AI agent and its tools and refuses calls that break your
+policy. The policies are ordinary Lean 4 definitions, so you can prove things about
+them, and the engine that evaluates them is itself proved to agree with a formal
+temporal-logic semantics.
 
-The design is inspired by Dogwood's event/policy separation and temporal guards.
-See the [article conformance notes](scripts/README.md#article-conformance) for the
-implemented examples and their assumptions.
+When the agent proposes a tool call, a small Python host intercepts it, reads the
+relevant facts from your backend, and asks the compiled Lean engine for a decision.
+The host writes that decision to a journal on disk, and only then runs the tool.
+A denied call never reaches the backend.
 
-## Run
+The design borrows Dogwood's separation of events from policy and its temporal
+guards; the [article conformance notes](scripts/README.md#article-conformance)
+show how LeanGuard handles the examples from the Dogwood announcement.
 
-This is `0.2.0rc2`, a source release candidate for dogfooding. LeanGuard's code,
-examples, documentation, and policy-authoring skill are MIT-licensed.
+## Try it
 
-Requirements: Linux, Python 3.12+ with `venv`, Git, and curl. The setup command
-installs elan if needed, fetches the pinned Lean toolchain and LeanLTL/mathlib
-dependencies, builds the native runtime, and installs Python into `.venv`.
+You need Linux, Python 3.12 or later with `venv`, Git and curl. The setup script
+installs elan if it is missing, fetches the pinned Lean toolchain and the
+LeanLTL and mathlib dependencies, builds the native engine, installs the Python
+package into `.venv`, and runs a short demo.
 
 ```sh
 git clone https://github.com/DebarghaG/LeanGuard.git
@@ -25,54 +28,32 @@ git checkout v0.2.0-rc2
 bash scripts/setup.sh
 ```
 
-The demo denies an unapproved write, reads the document, records a fixture
-confirmation, and executes the approved write. Replace that fixture with a trusted
-user interface in an integration.
+The demo policy says a document must be read before it is written, and that every
+write needs the user's approval. Its output, trimmed:
 
-The [release guide](scripts/README.md#release-candidates) also explains how to
-build platform wheels locally. Those wheels include the native executable and
-require only Linux and Python 3.12+ at runtime.
-
-## Python integration
-
-The core exports `Engine`, `GuardHost`, `Adapter`, `Snapshot`, `Proposal`, typed
-`Decision`/`CallResult` results, and read-only `audit`/`replay` APIs. It has no
-third-party Python dependencies. MCP and the τ² adapter are optional integrations.
-
-Implement `Adapter.snapshot(action, arguments, customer)` and
-`Adapter.execute(action, arguments)` for your backend, with a shared `lock` that
-serializes **every** backend writer. A snapshot supplies authoritative facts,
-normalized arguments, declared units and a revision covering all relevant state.
-Changing those facts or state must change the revision. See the small
-[example adapter](python/leanguard/demo.py) and [adapter contract](python/leanguard/host.py).
-
-For actions that need consent, the integration sequence is:
-
-```python
-proposal = host.prepare(action, arguments)
-accepted = trusted_user_ui(proposal.details)  # Display the exact details; return a Boolean.
-host.confirm(proposal.id, accepted)
-result = host.execute(action, arguments, proposal_id=proposal.id)
+```text
+Unapproved write: {'allow': False, 'reasons': ['example.confirm', 'example.read_first'], ...}
+Read: {'allow': True, 'outcome': 'success', 'result': {'value': 'initial'}, ...}
+Approved fixture write: {'allow': True, 'outcome': 'success', 'result': {'value': 'updated'}, ...}
+Backend calls: ['read', 'write']
 ```
 
-`host` is a `GuardHost` created with your adapter, journal path, trusted principal
-and conversation ID. Use it as a context manager so the native process, database
-and journal lock are closed. `execute` performs the native admission check before
-dispatch; callers should check `allow` and `outcome`. Use `ReadOnlyToolError` only
-for a certified read failure with no state change; other tool exceptions have an
-unknown outcome. MCP adapters additionally provide `tool_schemas()` and
-`mutating(action)`.
+The first write fails both rules. The read goes through, the host prepares an
+approval request for the write, a hard-coded fixture plays the user and accepts
+it, and the write succeeds. The backend only ever saw two calls. In a real
+integration you replace that fixture with your own trusted approval screen.
 
-Platform wheels discover their bundled executable automatically. Source/editable
-installs use the checkout's Lake build. Custom policy executables can be selected
-with `binary=Path(...)` or `LEANGUARD_BINARY`. `CallResult` always includes `allow`,
-`request_id`, `reasons`, `errors`, and `evidence`; admitted calls additionally report
-their execution `outcome`. Host/transport errors raise exceptions; callers must not
-dispatch on those errors. Adapters may implement `IdentityAdapter.resolve_identity(events)`
-to interpret trusted identity evidence; the default uses explicit identity observations.
-See [the guarantee boundary](docs/guarantees.md) before adapting a backend.
+To learn LeanGuard step by step, start with the [tutorials](docs/tutorials/README.md).
 
-## Native Lean DSL
+This is `0.2.0rc2`, a release candidate for dogfooding. Everything in the
+repository, including the policy-authoring skill, is MIT-licensed. The
+[release guide](scripts/README.md#release-candidates) explains how to build
+platform wheels, which bundle the native engine and need only Linux and Python
+3.12 at runtime.
+
+## Writing a policy
+
+A policy pack is a list of named rules:
 
 ```lean
 import LeanGuard.Policy
@@ -86,15 +67,74 @@ def policy : PolicyPack := { name := "documents", rules := [
 ] }
 ```
 
-`Formula`, `Check`, `Rule`, `Schema`, and `PolicyPack` are Lean types. Reusable policy
-constructs are Lean functions. A separate Lake project can use `serve policy`, or
-`serveVerified verifiedPolicy` to associate admission with a proved safety contract.
-No registry edit is required. The [downstream example](examples/custom_policy/Guard.lean)
-includes a property theorem, audit target, executable, and Python integration.
-The [Dogwood guide encodings](examples/dogwood/README.md) exercise 86 external
-examples with a separate native registry and reproducible replay comparisons.
-See the [DSL guide](docs/native-dsl.md#add-a-pack) and optional
-[policy-authoring skill](skills/leanguard-policy/SKILL.md).
+Everything is denied unless a `permit` matches. A call is allowed when some permit
+matches, every applicable `require` holds, and no `forbid` fires. `Formula`,
+`Check`, `Rule`, `Schema` and `PolicyPack` are plain Lean types, so reusable
+pieces of policy are just Lean functions.
+
+To ship your own policy, create a separate Lake project and call `serve policy`
+from `main`, or `serveVerified` if you have proved a safety property about the
+pack. You don't need to edit anything in LeanGuard itself. The
+[custom policy example](examples/custom_policy/Guard.lean) has a property
+theorem, an audit target, the executable and a Python driver. The
+[DSL guide](docs/native-dsl.md#add-a-pack) walks through the steps, and there is
+an optional [policy-authoring skill](skills/leanguard-policy/SKILL.md) for coding
+agents.
+
+For a larger worked example, the [Dogwood guide encodings](examples/dogwood/README.md)
+port all 86 examples from the Dogwood guide and compare them against the Dogwood
+interpreter.
+
+## Connecting your backend
+
+The Python package exports `Engine`, `GuardHost`, `Adapter`, `Snapshot`,
+`Proposal`, the `Decision` and `CallResult` result types, and the read-only
+`audit` and `replay` functions. It has no third-party dependencies; MCP and the
+τ² benchmark adapter are optional extras.
+
+Your adapter implements two methods. `execute(action, arguments)` runs the real
+tool. `snapshot(action, arguments, customer)` returns the facts the policy should
+see: normalized arguments, their units, authoritative backend state, and a
+revision string that changes whenever any of that state changes. The adapter also
+exposes a `lock`, and every writer to the backend must take it, including writers
+that don't go through LeanGuard. Without that, the facts Lean checked could be
+stale by the time the tool runs. [`demo.py`](python/leanguard/demo.py) is a
+complete small adapter, and [`host.py`](python/leanguard/host.py) defines the
+contract.
+
+Calls that need user approval go through a proposal:
+
+```python
+proposal = host.prepare(action, arguments)
+accepted = trusted_user_ui(proposal.details)  # show the exact details, return True or False
+host.confirm(proposal.id, accepted)
+result = host.execute(action, arguments, proposal_id=proposal.id)
+```
+
+The approval is bound to those exact arguments and to the backend revision at the
+time, and it can be used once. `trusted_user_ui` has to be something the agent
+can't impersonate.
+
+`host` is a `GuardHost` built from your adapter, a journal path, the principal
+(the user or account the agent acts for) and a conversation ID. Use it as a
+context manager so the engine process, database and journal lock are released.
+`execute` checks the call with Lean before running it. The returned `CallResult`
+always has `allow`, `request_id`, `reasons`, `errors` and `evidence`, and admitted
+calls also report an `outcome`. Errors in the host or transport are raised as
+exceptions, and nothing has been dispatched when that happens.
+
+If a tool raises, LeanGuard records the outcome as unknown, since the call might
+have changed state before failing. Raise `ReadOnlyToolError` instead when you know
+a read failed without side effects. Adapters can also implement
+`IdentityAdapter.resolve_identity(events)` to decide who the customer is from
+trusted evidence in the session's history; by default identity comes only from
+explicit identity observations.
+
+Platform wheels find their bundled engine automatically, and source installs use
+the checkout's Lake build. To use a custom policy executable, pass
+`binary=Path(...)` or set `LEANGUARD_BINARY`. Read the
+[guarantee boundary](docs/guarantees.md) before wiring up a real backend; it
+lists what your adapter is trusted to get right.
 
 ## MCP
 
@@ -104,51 +144,63 @@ See the [DSL guide](docs/native-dsl.md#add-a-pack) and optional
   --principal alice --session conversation-1
 ```
 
-The server exposes `policy_manifest`, `available_tools`, and `guarded_call`.
-Underlying tools must not also be exposed directly to the agent. There is no
-agent-facing approval, identity, observation-injection, or policy-loading tool.
-The CLI has no approval UI, so approval-required writes are denied. Use the Python
-confirmation flow above and pass its proposal ID to `guarded_call`, or supply
-`build_server(host, approval=trusted_callback)`. That callback receives a `Proposal`
-and must return a Boolean from a trusted user decision after displaying its details.
+The server exposes three tools to the agent: `policy_manifest`,
+`available_tools` and `guarded_call`. Don't give the agent the underlying tools
+as well, or it can simply go around the guard. Approval, identity and policy
+loading are deliberately not available as agent tools.
 
-Use `--domain retail`, `airline`, or `telecom` with the optional benchmark dependency.
-Benchmark adapters have fixed domain clocks and in-memory databases. The CLI is a
-development harness: restarting it creates a new backend database, **not** a durable
-backend recovery. Integrations must restore the actual backend separately before
-reusing a journal. The guard's journal never re-executes recorded tool calls.
+The command-line server has no approval screen, so writes that need approval are
+denied. To allow them, run the Python confirmation flow above and pass its
+proposal ID to `guarded_call`, or build the server yourself with
+`build_server(host, approval=trusted_callback)`, where the callback shows the
+`Proposal` to a real user and returns their answer.
 
-## Multi-agent runtime and A2A
+With the optional benchmark dependency you can also use `--domain retail`,
+`airline` or `telecom`. Those adapters use in-memory databases with fixed clocks,
+so restarting the server starts a fresh backend. That's fine for development, but
+a real integration has to restore its backend itself before reusing a journal;
+LeanGuard never re-executes journaled calls.
 
-`MultiAgentHost` extends the existing host with bound agent identities, attenuating
-delegations and shared ancestor budgets in one coordinator journal. Local tools
-retain their existing policy and approval checks. The optional A2A 1.0 HTTP+JSON
-client supports send, poll, cancel and streaming task updates, with explicit
-task/context ownership and replay protection.
+## Multiple agents and A2A
 
-The [multi-agent guide](docs/multi-agent.md) explains the runtime trust boundary,
-API, supported protocol subset, and LeanLTL contracts. These include prior
-unrevoked grants, terminal-state safety on forward traces, and an explicit
-counterexample to unconditional eventual completion. Run the deterministic
-example with `.venv/bin/python examples/multiagent/run.py`.
+`MultiAgentHost` lets several agents share one journal. Each agent has a bound
+identity and acts under a grant, and grants can be delegated only with narrower
+actions, resources, limits and expiry. Every call is charged against the budget
+of each ancestor grant, so two workers can't each spend their parent's full
+allowance. Local tools keep their usual policy and approval checks.
 
-## Guarantees and limits
+The optional A2A 1.0 client (HTTP and JSON) can send messages, poll, cancel, and
+stream task updates, and it tracks which agent owns each remote task and context.
 
-Lean proves that temporal evaluation and the complete admission decision agree with
-their LeanLTL meanings, including metric windows, scope projection, empty histories,
-and the error gate. See [the LeanLTL integration and proof API](docs/leanltl.md).
+The [multi-agent guide](docs/multi-agent.md) covers the trust boundary, the API,
+which parts of A2A are supported, and the LeanLTL contracts, including a proof
+that terminal task states are final and a counterexample showing why eventual
+completion can't be guaranteed. To see it run:
 
-This is **not** a proof of the Python host, the benchmark tools, all English policy
-clauses, or a refinement from real-world actions to those traces. Authentic facts,
-correct unit conversion, faithful confirmation presentation, complete interception,
-trusted clocks, backend synchronization, and compiler/runtime correctness remain
-deployment assumptions. See [the guarantee boundary](docs/guarantees.md).
+```sh
+.venv/bin/python examples/multiagent/run.py
+```
 
-The retail, airline, and telecom packs cover 43 assistant tool names with compiled
-input schemas and action scopes. [Coverage and interpretations](docs/coverage.md)
-records the implemented subset and unformalized prose rules. The monitor retains
-complete histories and uses a reference evaluator; production-scale throughput is
-not established.
+## What is proved
+
+Lean proves that the temporal evaluator and the full admission decision agree with
+their LeanLTL meanings, including time windows, scope projection, empty histories
+and the rule that any evaluation error means denial. The
+[LeanLTL guide](docs/leanltl.md) lists the theorems and shows how to use them.
+
+The proofs stop at the Lean engine. They say nothing about the Python host, the
+benchmark tools, or whether a domain rule faithfully captures the English policy
+it came from. Getting real facts out of the backend, converting units correctly,
+showing the user what they are approving, intercepting every tool call, keeping a
+trustworthy clock, and the correctness of the Lean compiler are all assumptions
+about your deployment. The [guarantee boundary](docs/guarantees.md) spells them
+out.
+
+The retail, airline and telecom packs cover 43 tools from the τ² benchmark, with
+compiled input schemas. [Coverage and interpretations](docs/coverage.md) records
+which policy clauses are enforced, how ambiguous ones were read, and which are
+left out. The monitor keeps the full history and evaluates it with a reference
+evaluator, so throughput at production scale is untested.
 
 ## Verification
 
@@ -157,21 +209,29 @@ not established.
 .venv/bin/python scripts/verify.py
 ```
 
-The gate builds Lean, audits proof axioms, checks Python lint and tests, and runs
-native article conformance. Tests for optional integrations skip when dependencies
-are absent. Ordinary pytest runs and the gate exclude tests marked `live`.
-See [the tooling guide](scripts/README.md) to enable the pinned τ² integration tests.
+This builds the Lean code, checks that the proofs use only Lean's standard axioms,
+runs the Python linter and tests, and checks the Dogwood article examples. Tests
+for optional integrations are skipped when their dependencies are missing, and
+tests that call a live model (marked `live`) never run by default. The
+[tooling guide](scripts/README.md) explains how to run the pinned τ² tests.
 
 ## Experiments
 
-The opt-in [Lean repair experiment](examples/repair/README.md) proves candidate tool-call
-edits with a policy-specific grind solver, produces replayable proofs, and displays
-native denial reasons with policy descriptions. Register proved policy lemmas with
-`guard_rule` and use them through `guard_solve` or `guard_repair?`. It runs offline
-against the existing policy evaluator. The [implementation study](docs/grind.md)
-explains which grind components it reuses.
+These are opt-in and outside the supported library.
 
-For normalized saved events, the installed library supports read-only replay:
+### Repair suggestions
+
+When a call is denied, the
+[Lean repair experiment](examples/repair/README.md) searches a list of candidate
+edits for one that the policy allows, and prints a proof you can replay. It uses
+a policy-specific configuration of Lean's `grind` solver: you register policy
+lemmas with `guard_rule` and use them through `guard_solve` or `guard_repair?`.
+The [grind study](docs/grind.md) explains which parts of `grind` it builds on.
+
+### Replaying saved traces
+
+You can check a recorded history against a policy
+without running any tools:
 
 ```python
 from leanguard import Engine, replay
@@ -181,12 +241,14 @@ with Engine("example") as engine:
         print(result["request_id"], result["assessment"])
 ```
 
-`leanguard replay DOMAIN events.jsonl --binary /path/to/custom-engine` exposes the
-same API. Preserve recorded dispatches/outcomes and mark incomplete evidence; see
-the [trace contract](docs/native-dsl.md#recorded-trace-api).
+`leanguard replay DOMAIN events.jsonl --binary /path/to/custom-engine` does the
+same from the shell. The [trace format](docs/native-dsl.md#recorded-trace-api)
+describes what each event needs and how to mark missing evidence.
 
-The [experiment guide](scripts/experiments/README.md) covers paired Qwen3.5-4B runs,
-saved-episode scoring, external rollout replay, and opt-in live protocol tests.
-These runners and dataset loaders live in `scripts/experiments/`, outside the
-installed Python package. Replay audits the recorded trajectory; it does not
-measure task success after blocking calls.
+### Model evaluations
+
+The [experiment guide](scripts/experiments/README.md)
+covers paired runs with a local Qwen3.5-4B model, scoring saved episodes, and
+auditing published rollouts from other projects. Replaying someone else's
+trajectory tells you which calls LeanGuard would have blocked; it can't tell you
+whether the task would still have succeeded with those calls blocked.

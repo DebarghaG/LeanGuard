@@ -1,4 +1,4 @@
-"""Checks for the example adapter's trust and representation boundaries."""
+"""Tests for what the Dogwood example adapter trusts and how it represents events."""
 
 import unittest
 from copy import deepcopy

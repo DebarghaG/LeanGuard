@@ -4,10 +4,10 @@ import LeanGuard.Audit
 /-!
 # Repair search against LeanLTL temporal semantics
 
-All histories are frozen, newest first, and synthetic. The only call edit is a
-payload selected from three choices; the requested payload is fixed by the goal.
-The fixture uses the payload as its approval binding for one fixed action/resource.
-This is not a replacement for the host's proposal normalization or approval flow.
+All histories are hand-built and newest first. The only thing a repair may change is
+the payload, chosen from three options; each goal fixes which payload the user asked
+for. The payload doubles as the approval binding, standing in for the host's proposal
+binding.
 -/
 
 namespace LeanGuard.Experimental.TemporalStress
@@ -61,7 +61,7 @@ theorem scoped_repair : ∃ choice : Fin 3, choice = 2 ∧ compliant foreignNois
 theorem newer_approval_repair : ∃ choice : Fin 3, choice = 2 ∧ compliant renewed choice := by
   guard_repair? [0, 1, 2]
 
--- Expiry, revocation, and consumption cannot be repaired by any available payload edit.
+-- No payload choice fixes an expired, revoked or already-used approval.
 theorem expired_has_no_repair : ¬ ∃ choice : Fin 3, compliant expired choice := by decide
 theorem revoked_has_no_repair : ¬ ∃ choice : Fin 3, compliant revoked choice := by decide
 theorem consumed_has_no_repair : ¬ ∃ choice : Fin 3, compliant consumed choice := by decide
@@ -73,7 +73,7 @@ theorem temporal_failure_restores_search : ∃ choice : Fin 3, compliant good ch
       guard_repair? [0, 1, 2] using decide
   guard_repair? [0, 1, 2] using decide
 
--- A valid proof for one snapshot is not valid after consuming or revoking its approval.
+-- A repair proved for one history fails once its approval is used or revoked.
 theorem repaired_proof_is_not_monotone :
     compliant good 2 ∧ ¬ compliant (event "revoked" 99 :: good) 2 ∧
       ¬ compliant (event "dispatch" 99 :: good) 2 := by decide
@@ -109,14 +109,14 @@ def policyCases : List PolicyCase := [
     [event "noise" 99, readAt 98, event "confirmed" 0], false⟩
 ]
 
--- Explicit expected outcomes; this also checks that the two unintended payloads stay denied.
+-- Expected outcomes, including that the two payloads the user didn't ask for stay denied.
 theorem policy_matrix : policyCases.all (fun c ↦ (List.finRange 3).all fun choice ↦
     decide (compliant c.past choice) == (c.expected && choice == 2)) = true := by decide +kernel
 
 def times : List Nat := [89, 90, 95, 100, 101]
 
--- Cross product: clocks × event order × conversation scope × read outcome × payload.
--- The oracle uses explicit order/window arithmetic, not the policy evaluator.
+-- Every combination of clock, event order, conversation, read outcome and payload.
+-- The oracle computes the answer with plain arithmetic instead of the evaluator.
 theorem time_order_grid : times.all (fun readTime ↦ times.all fun approvalTime ↦
     [false, true].all fun readFirst ↦ [false, true].all fun foreign ↦
       [false, true].all fun failed ↦ (List.finRange 3).all fun choice ↦
@@ -199,8 +199,8 @@ theorem deep_formula_repair : ∃ choice : Fin 3,
 theorem deep_strong_previous_boundary :
     ¬ (historyTrace deepHistory ⊨ (nestedPrevious 34).toLeanLTL tag) := by decide
 
--- Use an existing LeanLTL distribution theorem to guide a symbolic repair proof.
--- The arbitrary context family and edit constraint remain fixed throughout the search.
+-- A symbolic repair proof that uses a LeanLTL distribution lemma. The context family
+-- and edit constraint are arbitrary.
 theorem rewrite_guided_repair (ctx : α → Context) (permitted : α → Prop)
     (_original repaired : α) (w : Option Nat) (p q : Formula String)
     (intent : permitted repaired)
@@ -216,7 +216,7 @@ def errorPack : PolicyPack := { pack with
   rules := require "error" ["write"] (.top ⋎ malformed)
     "validate even a true disjunction" :: pack.rules }
 
--- Bare temporal truth cannot bypass policy validation.
+-- A true temporal formula is not enough if evaluation reports an error.
 theorem temporal_truth_is_not_full_admission :
     (historyTrace (context good 2).history ⊨
       (Formula.top ⋎ malformed).toLeanLTL (atomValue (context good 2))) ∧

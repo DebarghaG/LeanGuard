@@ -1,4 +1,4 @@
-"""Lean owns policy decisions; this package hosts the enforcement boundary."""
+"""Python host for LeanGuard: tools run only after the compiled Lean policy admits them."""
 
 from .engine import Engine, EngineError
 from .host import Adapter, GuardHost, IdentityAdapter, Proposal, ReadOnlyToolError, Snapshot

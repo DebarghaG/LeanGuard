@@ -2,9 +2,9 @@ import LeanGuard.MultiAgent
 import LeanLTL.Logics.LTLf
 import LeanLTL.Logics.LTL
 
-/-! Forward-time task contracts, separate from reverse-history admission guards.
-These use LeanLTL's operators directly on chronological task-state traces.
-Observed snapshots may skip intermediate states. They do not invent remote progress. -/
+/-! Contracts on a remote task's lifecycle, stated in LeanLTL over traces that run forward
+in time (admission formulas run backward). A trace is the sequence of phases we observed,
+which may skip some. -/
 namespace LeanGuard.MultiAgent.TaskContracts
 open LeanLTL
 
@@ -20,8 +20,8 @@ def resolved : TraceSet TaskPhase := TraceSet.of fun phase ↦ phase.terminal = 
 def eventuallyCompleted : TraceSet TaskPhase := completed.finally
 def eventuallyResolved : TraceSet TaskPhase := resolved.finally
 
-/-- Weak next handles a finite trace's last state without inventing a successor.
-The induction theorem is LeanLTL's, on finite or infinite chronological traces. -/
+/-- Once a trace satisfying the lifecycle reaches a terminal phase, it stays there. Holds for
+finite and infinite traces; weak next makes the last state of a finite trace unconstrained. -/
 theorem terminal_persists (t : Trace TaskPhase) (phase : TaskPhase)
     (done : phase.terminal = true) (initial : t ⊨ phaseIs phase)
     (safe : t ⊨ lifecycle) : t ⊨ (phaseIs phase).globally := by
@@ -39,7 +39,7 @@ theorem completion_implies_resolution : TraceSet.sem_imp eventuallyCompleted eve
 def phases : List TaskPhase := [.submitted, .working, .inputRequired, .authRequired,
   .completed, .canceled, .rejected, .failed]
 
-/-- The same contract in upstream standard finite-trace LTL syntax. -/
+/-- The same contract written in LeanLTL's finite-trace `LTLf` syntax. -/
 def stepSyntax : LTLf.Formula TaskPhase := phases.foldr (fun phase rest ↦
   ((LTLf.Formula.var (· = phase)).imp
     (LTLf.Formula.var fun next ↦ taskTransition phase next = true).wnext).and rest) .true
@@ -59,7 +59,7 @@ theorem step_syntax_meaning : LTLf.toLeanLTL stepSyntax = step := by
   · intro h
     exact ⟨h _, h _, h _, h _, h _, h _, h _, h _, trivial⟩
 
-/-- Use LeanLTL's proved finite-LTL embedding, not a second finite-LTL semantics. -/
+/-- The `LTLf` version means the same as the `TraceSet` version, via LeanLTL's `LTLf.equisat`. -/
 theorem finite_lifecycle_correct (t : LTLf.Trace TaskPhase) :
     LTLf.sat t lifecycleSyntax ↔ t.trace ⊨ lifecycle := by
   rw [LTLf.equisat, lifecycleSyntax, LTLf.toLeanLTL_globally, step_syntax_meaning]
@@ -84,7 +84,8 @@ theorem lifecycle_unshift (head : TaskPhase) (tail : Trace TaskPhase) :
       taskTransition head (tail.toFun 0) = true ∧ (tail ⊨ lifecycle) := by
   rw [lifecycle, TraceSet.globally_eq_globally, TraceSet.unshift_sat_globally_iff, step_unshift]
 
-/-- Exhaustive triples can be checked constructively via this proved equivalence. -/
+/-- A three-phase trace obeys the lifecycle exactly when both of its steps are allowed.
+The tests use this to check every triple by computation. -/
 theorem lifecycle_triple (a b c : TaskPhase) :
     (Trace.unshift a (Trace.unshift b (Trace.singleton c)) ⊨ lifecycle) ↔
       taskTransition a b = true ∧ taskTransition b c = true := by
@@ -95,8 +96,8 @@ instance tripleDecidable (a b c : TaskPhase) :
     Decidable (Trace.unshift a (Trace.unshift b (Trace.singleton c)) ⊨ lifecycle) :=
   decidable_of_iff _ (lifecycle_triple a b c).symm
 
-/-- A nonterminating remote worker satisfies lifecycle safety while violating
-eventual completion. This is a checked counterexample to an unconditional liveness claim. -/
+/-- A worker that stays `working` forever obeys the lifecycle but never completes, so
+the lifecycle contract alone cannot promise that a task finishes. -/
 def foreverWorking : Trace TaskPhase where
   toFun? _ := some .working
   length := ⊤

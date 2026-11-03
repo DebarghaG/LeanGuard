@@ -1,7 +1,7 @@
 """Print native Lean schema declarations from the pinned benchmark's tool definitions.
 
-Maintainer utility only: output is reviewed and checked in, never dynamically loaded
-from an agent's tools/list response. Unsupported schema constructs abort generation.
+A maintainer tool: review the output and check it in. Schemas are never loaded at
+runtime from an agent's tools/list. Unsupported schema constructs abort generation.
 """
 
 import json

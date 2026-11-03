@@ -2,8 +2,8 @@ import Guide
 import LeanGuard.Experimental.TemporalRepair
 import LeanGuard.Audit
 
-/-! Repairs preserve the requested action and trusted evidence. A quantity reduction is
-permitted only by the explicit example contract; it is not inferred from a policy denial. -/
+/-! Repair proofs for the Dogwood examples. Each keeps the requested action and the
+trusted history. Selling fewer shares is acceptable only where a goal says so. -/
 
 namespace DogwoodGuide.Repairs
 open Lean LeanGuard LeanGuard.Experimental
@@ -31,7 +31,7 @@ theorem exact_quantity_cannot_be_repaired : ¬ ∃ shares : Nat, shares = 100 �
     decide +kernel
   exact denied allowed
 
-/-- With no permit rule, changing arguments, history, or even the action cannot admit a call. -/
+/-- With no permit rule, no choice of action, arguments or history gets a call admitted. -/
 theorem forbid_only_cannot_be_repaired (name : String) (scope : List String)
     (condition : Formula Check) (c : Context) :
     ¬ (historyTrace c.history ⊨ (forbidExample name scope condition).toLeanLTL c) := by

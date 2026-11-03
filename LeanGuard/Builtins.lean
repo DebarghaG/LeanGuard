@@ -23,7 +23,7 @@ def basePackFor : String → Except String PolicyPack
         ("amount", .integer)])])
   | name => DogwoodExamples.packFor name
 
-/-- Multi-agent domains opt in to the A2A operation surface at compile time. -/
+/-- Looks up a built-in pack. A `multiagent.` prefix adds the A2A operations to the base pack. -/
 def packFor (name : String) : Except String PolicyPack := do
   if let some base := name.dropPrefix? "multiagent." then
     let pack ← basePackFor base.toString

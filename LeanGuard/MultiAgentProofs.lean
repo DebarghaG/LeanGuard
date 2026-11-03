@@ -10,8 +10,8 @@ theorem response_binding_immutable (s next : State) (request : String)
   · exact same.symm
   · simp [State.bindResponse, bound, same] at accepted
 
-/-- Full multi-agent meaning, including the original error gate, the temporal
-contracts and successful ledger authorization. No new temporal evaluator. -/
+/-- The LeanLTL meaning of the multi-agent decision: the policy with its error gate,
+the grant formulas, and a successful ledger check. -/
 def admissionLeanLTL (pack : PolicyPack) (c : Context)
     (authority : Except String (List Grant)) : LeanLTL.TraceSet History :=
   (pack.toLeanLTL c).and (match authority with
@@ -43,8 +43,8 @@ theorem authorityHistory_member (chain : List Grant) (g : Grant) (mem : g ∈ ch
     · simpa [eq] using h.1
     · exact ih mem h.2
 
-/-- An admitted ancestor has an earlier grant witness and no revocation at any
-subsequent position. Foreign workflows cannot shift `previous` or break `since`. -/
+/-- If a call is admitted, each ancestor grant was issued earlier and revoked at no later
+position. Events from other workflows are projected away and can't affect this. -/
 theorem activeGrant_witness (g : Grant) (c : Context)
     (h : evaluate (atomValue c) (activeGrant g) c.history = true) :
     ∃ i ∈ List.range (projectAtHead .workflow c.history).tail.length,

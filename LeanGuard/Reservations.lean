@@ -16,7 +16,7 @@ theorem confirmedWithin_recent_witness (c : Context) (seconds : Nat)
       Holds (atomValue c) confirmedEvent ((projectAtHead .conversation c.history).drop i) := by
   exact ((evaluate_correct _ _ _).mp h).2
 
-/-- An accepted confirmation has no matching dispatch in its scoped prior history. -/
+/-- If `confirmed` holds, no earlier dispatch in scope has used the confirmation. -/
 theorem confirmation_not_consumed (c : Context)
     (accepted : evaluate (atomValue c) confirmed c.history = true) :
     ¬ Holds (atomValue c) (.once none usedConfirmation)
@@ -24,7 +24,7 @@ theorem confirmation_not_consumed (c : Context)
   have holds := (evaluate_correct (atomValue c) confirmed c.history).mp accepted
   exact holds.2.2
 
-/-- Confirmation cannot be satisfied without a real matching prior witness. -/
+/-- If `confirmed` holds, a matching confirmation event exists earlier in the history. -/
 theorem confirmation_has_witness (c : Context)
     (accepted : evaluate (atomValue c) confirmed c.history = true) :
     ∃ i ∈ List.range (projectAtHead .conversation c.history).tail.length,
@@ -79,8 +79,8 @@ theorem sumEvents_cons (e : Event) (h : History) (p : Event → Bool) (hp : p e 
   rw [sumEvents_fold]
   omega
 
-/-- Reserving an admitted call preserves both the count and amount bounds, including
-the new dispatch. Unknown outcomes retain their reservation; they do not refund quota. -/
+/-- After the quota check passes and the dispatch is recorded, the count and amount
+are still within bounds. A dispatch with an unknown outcome keeps counting. -/
 theorem quota_reservation_bound (c : Context) (calls amount window : Nat)
     (allowed : evaluate (atomValue c) (quota calls amount window) c.history = true) :
     countEvents (reserve true c.request c.history) (quotaMatches c.request window) ≤ calls ∧

@@ -65,7 +65,7 @@ async def test_acknowledgement_is_separate_from_completion(setup):
     result = await client.send("remote", message())
     assert result["outcome"] == "success"
     assert client.task("remote", "task-1")["state"] == "working"
-    assert not host.customer()  # ROLE_USER is not human identity/approval.
+    assert not host.customer()  # A ROLE_USER message carries neither human identity nor approval.
     transport.frames = [task("COMPLETED")]
     assert (await client.get("remote", "task-1"))["outcome"] == "success"
     assert client.task("remote", "task-1")["state"] == "completed"

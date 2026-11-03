@@ -6,7 +6,7 @@ from .host import Snapshot
 
 
 class MemoryTools:
-    """Small deterministic MCP backend for exercising the enforcement protocol."""
+    """A small in-memory backend for demos and tests."""
 
     def __init__(self):
         self.lock = threading.RLock()

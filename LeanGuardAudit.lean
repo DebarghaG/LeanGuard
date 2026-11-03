@@ -7,7 +7,7 @@ import LeanGuard.Audit
 import LeanGuard.MultiAgentProofs
 import LeanGuard.MultiAgentTests
 
-/-! Audit the live/offline entry points and all imported LeanGuard declarations. -/
+/-! Axiom audit of the server and replay entry points and every imported LeanGuard declaration. -/
 run_cmd do
   LeanGuard.Audit.check
     #[``LeanGuard.handle, ``LeanGuard.handleWith, ``LeanGuard.serveVerified,

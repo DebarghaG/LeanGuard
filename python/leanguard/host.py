@@ -15,7 +15,10 @@ from .types import CallResult, TraceEvent
 
 
 class ReadOnlyToolError(Exception):
-    """Adapter-certified failure of a read-only operation with no state change."""
+    """Raise from an adapter when a read-only call failed without changing any state.
+
+    Any other exception from a tool is recorded as an unknown outcome.
+    """
 
 
 @dataclass(frozen=True)
@@ -29,7 +32,10 @@ class Snapshot:
 
 
 class Adapter(Protocol):
-    """Implementations must serialize every environment writer with this lock."""
+    """The backend interface: snapshot current state and run tools.
+
+    Every writer to the backend must hold `lock`, not only this adapter.
+    """
 
     lock: threading.RLock
 
@@ -38,10 +44,11 @@ class Adapter(Protocol):
 
 
 class IdentityAdapter(Adapter, Protocol):
-    """Optional trusted interpretation of backend identity evidence.
+    """An adapter that works out the customer's identity from backend events.
 
-    Events are chronological and already restricted to this principal/session.
-    Returning an identity is an integration assumption, not model-supplied consent.
+    `events` are oldest first and already filtered to this principal and session.
+    The host trusts whatever identity you return, so derive it only from
+    authoritative evidence, never from model output.
     """
 
     def resolve_identity(self, events: list[TraceEvent]) -> str: ...
@@ -63,10 +70,11 @@ class Proposal:
 
 
 class GuardHost:
-    """Single-writer host. Confirmation and observation methods are trusted UI APIs.
+    """Runs tool calls through the Lean policy and journals every decision.
 
-    Only `execute` and proposal presentation belong on the agent-facing surface.
-    A confirmation is never inferred from tool output or agent-authored text.
+    Only one host may write a journal at a time. Give the agent `execute` and
+    proposal details; keep `confirm` and `observe_trusted` in trusted UI code.
+    Tool output and agent text never count as a confirmation.
     """
 
     def __init__(
@@ -88,7 +96,7 @@ class GuardHost:
         self._lock = threading.RLock()
         self.database = Path(database).resolve()
         self.database.parent.mkdir(parents=True, exist_ok=True)
-        # The lock spans this object's lifetime and is released by close().
+        # Held for the object's lifetime; close() releases it.
         self._lockfile = open(str(self.database) + ".lock", "a+b")  # noqa: SIM115
         try:
             fcntl.flock(self._lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -151,7 +159,7 @@ class GuardHost:
             self.db.execute("COMMIT")
             return response
         except BaseException:
-            # Even a failed rollback must not leave speculative native state usable.
+            # Close the engine first so its speculative state can't be used even if rollback fails.
             self.engine.close()
             self.db.execute("ROLLBACK")
             self._recover()
@@ -207,7 +215,7 @@ class GuardHost:
         return events
 
     def customer(self) -> str:
-        """Trusted subject identity; the historical name is kept for compatibility."""
+        """The trusted subject identity. Named `customer` for backward compatibility."""
         events = [
             event
             for event in self.events()
@@ -252,7 +260,7 @@ class GuardHost:
         }
 
     def prepare(self, action: str, arguments: dict) -> Proposal:
-        """Produce canonical details for the trusted user confirmation surface."""
+        """Create a proposal for the user to approve. Show its `details` in a trusted UI."""
         return self._prepare(action, arguments)
 
     def _prepare(self, action: str, arguments: dict, *, scope=None) -> Proposal:
@@ -299,7 +307,7 @@ class GuardHost:
         return proposal
 
     def confirm(self, proposal_id: str, accepted: bool):
-        """Trusted UI callback after displaying `Proposal.details` verbatim."""
+        """Record the user's answer. Call only from trusted UI, after showing `Proposal.details` unchanged."""
         if type(accepted) is not bool:
             raise ValueError("confirmation requires a Boolean user response")
         with self._lock, self.adapter.lock:
@@ -319,7 +327,7 @@ class GuardHost:
             self._record({"op": "observe", "event": event})
 
     def observe_trusted(self, kind: str, resource: str, *, action: str = "user"):
-        """Trusted identity/intent/user-event input, never exposed as an agent tool."""
+        """Record a trusted user event, such as identity or stated intent. Never expose this to the agent."""
         if kind not in {
             "identity",
             "compensation_requested",
@@ -399,7 +407,7 @@ class GuardHost:
                 )
                 return {**decision, "outcome": "failure", "error": str(exc)}
             except BaseException as exc:
-                # A tool exception is not evidence that it had no side effects.
+                # An exception doesn't mean the tool had no effect, so the outcome is unknown.
                 self._record(
                     {
                         "op": "observe",

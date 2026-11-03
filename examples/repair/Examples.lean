@@ -5,8 +5,8 @@ import LeanGuard.Audit
 /-!
 # Repair experiments against native LeanGuard decisions
 
-Run with `lake env lean examples/repair/Examples.lean` after building
-`LeanGuard.Experimental.Repair`. These are offline fixtures, not host events.
+Build `LeanGuard.Experimental.Repair`, then run
+`lake env lean examples/repair/Examples.lean`. All contexts here are hand-built.
 -/
 
 namespace LeanGuard.Experimental.Examples
@@ -31,8 +31,7 @@ def budget : PolicyPack := { name := "repair-budget", rules := [
     return amount > 0 && amount == c.request.amount) "positive, faithfully normalized amount"
 ] }
 
-/-- Only the amount and its input encoding vary. The historical dispatch and facts stay fixed.
-This fixture models normalization for this one tool; a live host must normalize again. -/
+/-- The test context with a different amount. History and facts are unchanged. -/
 def amountContext (amount : Nat) : Context :=
   let arguments := Json.mkObj [("amount", toJson amount)]
   let event := { request with amount := amount, inputJson := arguments.compress }
@@ -42,36 +41,36 @@ theorem original_denied : (decidePolicy budget (amountContext 70)).allow = false
 
 #guard_explain budget (amountContext 70)
 
--- The first two candidates fail. Zero cannot satisfy the positive-amount requirement.
--- The goal also states the intent restriction: do not increase the proposed amount.
+-- 70 and 50 exceed the budget and 0 isn't positive, so 40 wins. The goal also says the
+-- amount may only go down.
 theorem budget_repair : ∃ amount : Nat, 0 < amount ∧ amount ≤ 70 ∧
     (decidePolicy budget (amountContext amount)).allow = true := by
   guard_repair? [70, 50, 0, 40]
 
--- This is the ordinary proof emitted for the successful candidate, independently replayed.
+-- The same witness, proved without the tactic.
 theorem budget_repair_replayed : ∃ amount : Nat, 0 < amount ∧ amount ≤ 70 ∧
     (decidePolicy budget (amountContext amount)).allow = true := by
   exact ⟨40, by decide⟩
 
--- Reusable arithmetic templates can be symbolic, with hypotheses rather than concrete data.
+-- Candidates can be symbolic expressions, proved from hypotheses.
 theorem symbolic_budget_repair (spent cap proposed : Nat)
     (available : spent ≤ cap) (oversized : cap ≤ spent + proposed) :
     ∃ amount : Nat, amount ≤ proposed ∧ spent + amount = cap := by
   guard_repair? [proposed, cap - spent] using omega
 
--- Search failure must restore the original goal so other tactics can continue.
+-- When search fails, the goal is left untouched for the next tactic.
 theorem failed_search_restores_goal : ∃ amount : Nat, amount = 40 := by
   fail_if_success guard_repair? [70, 50]
   exact ⟨40, rfl⟩
 
--- An unfinished discharger or a sorry must never count as a proved candidate.
+-- A candidate proved with `sorry` doesn't count.
 set_option linter.unreachableTactic false in
 theorem unproved_candidate_rejected : ∃ amount : Nat, amount = 40 := by
   fail_if_success guard_repair? [40] using skip
   fail_if_success guard_repair? [40] using sorry
   exact ⟨40, rfl⟩
 
--- The tactic should only solve its main goal, preserving any sibling goals.
+-- Only the main goal is closed; other open goals remain.
 theorem sibling_goals_preserved : (∃ amount : Nat, amount = 40) ∧ True := by
   constructor
   · guard_repair? [40]
@@ -92,12 +91,12 @@ theorem write_needs_evidence :
     (decidePolicy LeanGuard.Examples.documents writeContext).reasons =
       ["documents.read_before_write", "documents.confirm"] := by decide
 
--- This proves impossibility for every amount in this fixed context, independently of search.
+-- A direct proof that no amount works in this context.
 theorem write_amount_cannot_repair (amount : Nat) :
     (decidePolicy LeanGuard.Examples.documents (writeAmountContext amount)).allow = false := by
   rfl
 
--- Candidate search must also fail for this denied write.
+-- So the search has to fail too.
 set_option linter.unreachableTactic false in
 theorem denied_write_search_fails : True := by
   fail_if_success
@@ -110,13 +109,13 @@ def malformedContext : Context :=
   let event := { (amountContext 40).request with inputJson := "{}" }
   ⟨event, Json.mkObj [], Json.mkObj [], [event, pastSpend]⟩
 
--- Passing the quota alone does not bypass the existing error gate for malformed arguments.
+-- Malformed arguments are still denied even when the quota passes.
 theorem malformed_denied : (decidePolicy budget malformedContext).allow = false := by decide
 
 #guard (decidePolicy budget malformedContext).errors.isEmpty = false
 #guard_explain budget malformedContext
 
--- Default deny and forbid also remain part of the full admission predicate.
+-- Default deny and forbid rules still apply.
 theorem default_denied :
     (decidePolicy { budget with rules := budget.rules.tail } (amountContext 40)).allow = false := by
   decide

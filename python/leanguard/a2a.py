@@ -1,8 +1,8 @@
-"""Guarded A2A 1.0 HTTP+JSON client with polling and SSE task updates.
+"""Guarded A2A 1.0 HTTP+JSON client, with polling and SSE task updates.
 
-The transport is replaceable. Peer profiles are trusted host code defining the
-resource and charge of each exact message. A remote response is untrusted data;
-it never creates identity, approval, a delegation, or authoritative tool facts.
+Peer profiles are trusted host code: they decide the resource and charge of each
+message. Remote responses are untrusted data and cannot create identity,
+approval, delegations or tool facts. The transport is replaceable.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def _unique_object(pairs):
 
 
 class A2AStream(Protocol):
-    """An owned response iterator whose cleanup must be awaited."""
+    """A response stream owned by the caller. Await `aclose()` when finished with it."""
 
     def __aiter__(self) -> A2AStream: ...
 
@@ -47,7 +47,7 @@ class A2ATransport(Protocol):
 
 @dataclass(frozen=True)
 class PeerFacts:
-    """Host interpretation of a message; no assertion about remote state."""
+    """What the host decides a message touches and costs. Says nothing about remote state."""
 
     resource: str
     amount: int = 0
@@ -61,10 +61,11 @@ class Peer:
 
 
 class A2AHTTPTransport:
-    """A2A 1.0 REST binding. Never automatically retry a Send Message.
+    """Transport for the A2A 1.0 HTTP+JSON (REST) binding.
 
-    Credentials belong in the host-created HTTP client's headers. Task identifiers
-    are escaped as single path components. Redirects are disabled on every call.
+    Put credentials in the headers of the HTTP client you pass in. Task IDs are
+    escaped as single path components and redirects are never followed. Send
+    Message is never retried automatically.
     """
 
     def __init__(self, endpoint: str, *, client=None, headers=None, timeout=30):
@@ -164,10 +165,10 @@ class A2AHTTPTransport:
 
     @staticmethod
     async def _sse_lines(response):
-        # Bound a line before decoding it; a malicious unbroken line/comment
-        # must not bypass the frame limit. SSE permits LF, CRLF and CR.
+        # Enforce the frame limit before decoding, so one huge line or comment can't
+        # slip past it. SSE allows LF, CRLF and CR line endings.
         pending, first, skip_lf = bytearray(), True, False
-        # Consume available bytes immediately; fixed-size chunks buffer live events.
+        # Read whatever has arrived. Waiting for fixed-size chunks would delay live events.
         async for chunk in response.aiter_bytes():
             if skip_lf:
                 chunk, skip_lf = chunk.removeprefix(b"\n"), False
@@ -175,7 +176,7 @@ class A2AHTTPTransport:
             while match := re.search(rb"\r\n|\r|\n", pending):
                 if match.start() > 8 * 1024 * 1024:
                     raise ValueError("A2A stream line exceeds 8 MiB")
-                # CR ends a line immediately. Swallow a later LF if CRLF was split.
+                # CR ends a line at once; drop the following LF if a CRLF was split across reads.
                 skip_lf = match.group() == b"\r" and match.end() == len(pending)
                 line = bytes(pending[: match.start()])
                 del pending[: match.end()]
@@ -199,12 +200,12 @@ class A2AHTTPTransport:
 
 
 class A2AClient:
-    """A peer allowlist and authenticated Agent bound by trusted orchestration.
+    """Sends A2A messages for one authenticated agent to an allowlist of peers.
 
-    `outcome=success` means the protocol operation returned, not that a remote
-    task completed or that its claimed effects occurred. Inspect `task()` for
-    the last reported lifecycle state. Every new send/continuation consumes
-    authority; streams and polling do not mint fresh delegations.
+    `outcome="success"` only means the protocol call returned. The remote task may
+    still be running and its claimed effects are unverified; `task()` gives the
+    last reported state. Each new send or continuation uses up the agent's
+    authority. Streaming and polling never create new delegations.
     """
 
     def __init__(self, agent: Agent, peers: Mapping[str, Peer]):

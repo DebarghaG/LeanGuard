@@ -1,4 +1,4 @@
-"""Fixed-token local serving microbenchmark, not a task-quality evaluation."""
+"""Throughput microbenchmark for the local model server, using fixed token counts."""
 
 import argparse
 import json

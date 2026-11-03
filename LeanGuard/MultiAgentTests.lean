@@ -2,9 +2,9 @@ import LeanGuard.MultiAgentProofs
 import LeanGuard.TaskContracts
 import LeanGuard.A2A
 
-/-! Deterministic adversarial temporal corpus. Expected verdicts are independent
-state-fold/pairwise oracles; actual verdicts use the LeanLTL-connected evaluators.
-Equal timestamps remain separate causal positions. -/
+/-! Exhaustive grant-history and task-phase tests. Expected verdicts come from simple
+oracles written separately from the evaluator. Events with equal timestamps are still
+ordered. -/
 namespace LeanGuard.MultiAgent.Tests
 open Lean TaskContracts LeanLTL
 
@@ -35,7 +35,7 @@ def words : Nat → List History
 
 def corpus : List History := (List.range 5).flatMap words
 
-/-- Independent chronological state machine, not a call to the temporal evaluator. -/
+/-- Oracle: replays the history forward as a state machine instead of using the evaluator. -/
 def oracle (g : Grant) (past : History) : Bool := past.reverse.foldl (fun active e ↦
   if e.principal != "alice" || e.workflow != "workflow" || e.resource != g.id then active
   else if e.kind == "agent_revoke" then false
@@ -91,7 +91,7 @@ theorem singleton_weak_next_does_not_invent_a_successor :
     Trace.singleton TaskPhase.working ⊨ (TraceSet.false : TraceSet TaskPhase).wnext := by
   simp [TraceSet.wshift_eq_wshift, TraceSet.singleton_sat_wshift]
 
-/-- Reusable source-library temporal algebra preserves a task-resolution contract. -/
+/-- "Eventually completed or failed" splits into two eventualities, by LeanLTL's `finally_or_distrib`. -/
 theorem resolution_distribution :
     (completed.or (phaseIs .failed)).finally =
       completed.finally.or (phaseIs .failed).finally := by

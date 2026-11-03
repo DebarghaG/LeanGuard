@@ -10,7 +10,7 @@ structure Context where
   facts : Json
   history : History
 
-/-- A named, native Lean predicate. Missing or ill-typed inputs are explicit errors. -/
+/-- A named predicate on a context. Missing or ill-typed inputs return an error. -/
 structure Check where
   name : String
   run : Context → Except String Bool
@@ -82,12 +82,12 @@ def revokedEvent : Formula Check := eventCheck "matching_revocation" fun r e ↦
 def usedConfirmation : Formula Check := eventCheck "confirmation_consumed" fun r e ↦
   sameConversation r e && e.kind == "dispatch" && e.binding == r.binding
 
-/-- Confirmation must occur earlier, remain unrevoked, and have no prior reservation. -/
+/-- A matching confirmation happened earlier, hasn't been revoked, and hasn't been used by a dispatch. -/
 def confirmed : Formula Check :=
   .within .conversation (.previous none ((.since none (.neg revokedEvent) confirmedEvent) ⋏
     .neg (.once none usedConfirmation)))
 
-/-- Add an inclusive age bound measured from the decision, without shifting its clock. -/
+/-- `confirmed`, but the confirmation must be at most `seconds` old at decision time. -/
 def confirmedWithin (seconds : Nat) : Formula Check :=
   confirmed ⋏ .within .conversation (.once (some seconds) confirmedEvent)
 
@@ -152,7 +152,7 @@ def validationErrors (pack : PolicyPack) (ctx : Context) : List String :=
 def atomValue (ctx : Context) (a : Check) (h : History) : Bool :=
   ((a.run { ctx with history := h }).toOption).getD false
 
-/-- Validate all Boolean branches at applicable temporal positions before admission. -/
+/-- Evaluates a pack. Any evaluation error at a position the formula looks at denies the call. -/
 def decidePolicy (pack : PolicyPack) (ctx : Context) : Decision :=
   let atom := atomValue ctx
   let errors := validationErrors pack ctx
@@ -179,7 +179,7 @@ theorem decision_no_errors (pack : PolicyPack) (ctx : Context)
   simp only [decidePolicy, Bool.and_eq_true] at h
   simpa using h.2
 
-/-- The complete policy meaning in LeanLTL, including the fail-closed error gate. -/
+/-- The pack's meaning in LeanLTL, including the requirement that evaluation raise no errors. -/
 def PolicyPack.toLeanLTL (pack : PolicyPack) (ctx : Context) : LeanLTL.TraceSet History :=
   (authorizationLeanLTL pack.rules (atomValue ctx) ctx.request.action).and
     (LeanLTL.TraceSet.const (validationErrors pack ctx = []))

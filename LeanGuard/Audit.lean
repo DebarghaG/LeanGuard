@@ -4,8 +4,8 @@ import Lean.Elab.Command
 namespace LeanGuard.Audit
 open Lean Elab Command
 
-/-- Audit explicit roots and every declaration in the supplied namespaces.
-Dependencies are collected transitively, including those outside the namespaces. -/
+/-- Audits the given roots and every declaration in the given namespaces. Dependencies
+are followed transitively, even into other namespaces. -/
 def check (roots namespaces : Array Name) : CommandElabM Unit := do
   let env ← getEnv
   if roots.isEmpty then throwError "supply at least one audit root"
