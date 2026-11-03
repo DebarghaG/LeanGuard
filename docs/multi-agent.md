@@ -183,6 +183,12 @@ transport provides an A2A server, Agent Card discovery or push notifications.
 Those can be added behind the replaceable `A2ATransport` interface without
 touching the authority model or the temporal semantics.
 
+`send` and `send_stream` admit only the A2A 1.0 JSON field names in a Message and
+its Parts. Protobuf JSON parsers, and so A2A servers, also accept the snake_case
+proto names, and an alias such as `task_id` would otherwise reach the wire as a
+real task reference while the scope checks saw an unscoped send. Free-form
+`metadata` and `data` values are not restricted.
+
 `A2ATransport.stream` returns an `A2AStream` iterator that the caller owns and that
 has an asynchronous `aclose` method; an async generator meets that contract. The
 client waits for transport cleanup before releasing the coordinator's close fence,

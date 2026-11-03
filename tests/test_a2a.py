@@ -525,6 +525,36 @@ async def test_http_stream_records_task_evidence_before_idle_timeout(setup):
     assert host.events()[-1]["kind"] == "stream_error"
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"task_id": "someone-elses-task"},
+        {"context_id": "someone-elses-context"},
+        {"message_id": "m-2"},
+        {"reference_task_ids": ["task-9"]},
+        {"unknown": 1},
+        {"parts": [{"text": "x", "media_type": "text/plain"}]},
+        {"parts": [{"text": "x", "taskId": "task-9"}]},
+        {"parts": ["text"]},
+    ],
+)
+def test_message_admits_only_a2a_json_field_names(bad):
+    # Proto JSON parsers also accept snake_case names, so an alias could reach the
+    # wire as a real taskId while the scope checks saw an unscoped send.
+    with pytest.raises(ValueError):
+        A2AClient._message(message(**bad))
+    assert A2AClient._message(
+        message(
+            taskId="task-1",
+            contextId="context-1",
+            referenceTaskIds=["task-0"],
+            extensions=["https://example.com/ext"],
+            metadata={"snake_case_is_fine_here": True},
+            parts=[{"text": "x", "mediaType": "text/plain", "metadata": {"a_b": 1}}],
+        )
+    )
+
+
 def test_transport_rejects_insecure_or_credential_bearing_endpoints():
     pytest.importorskip("httpx")
     for endpoint in [

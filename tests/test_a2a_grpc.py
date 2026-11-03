@@ -104,6 +104,25 @@ async def test_grpc_unary_calls_return_the_http_frame_shapes(peer):
     assert servicer.requests[2][1].id == "task-1"
 
 
+async def test_grpc_send_accepts_every_a2a_json_field_name(peer):
+    servicer, target = peer
+    full = message(
+        taskId="task-1",
+        contextId="context-1",
+        referenceTaskIds=["task-0"],
+        extensions=["https://example.com/ext"],
+        metadata={"snake_case_key": {"nested_key": [1, "two"]}},
+        parts=[{"text": "x", "mediaType": "text/plain", "metadata": {"a_b": 1}}],
+    )
+    async with A2AGRPCTransport(target, insecure=True) as transport:
+        assert await transport.request("a2a.send", {"message": full}) == task()
+    sent = servicer.requests[0][1].message
+    assert sent.task_id == "task-1" and sent.context_id == "context-1"
+    assert list(sent.reference_task_ids) == ["task-0"]
+    assert sent.parts[0].media_type == "text/plain"
+    assert sent.metadata["snake_case_key"]["nested_key"][1] == "two"
+
+
 async def test_grpc_send_returns_direct_agent_messages(peer):
     servicer, target = peer
     reply = {"message": {"messageId": "m-2", "role": "ROLE_AGENT", "parts": [{"text": "Done"}]}}
@@ -173,10 +192,23 @@ async def test_grpc_unary_calls_have_a_deadline(peer):
 async def test_grpc_rejects_unknown_fields_and_bad_task_ids(peer):
     servicer, target = peer
     async with A2AGRPCTransport(target, insecure=True) as transport:
-        with pytest.raises(json_format.ParseError):
+        with pytest.raises(ValueError):
             await transport.request("a2a.send", {"message": message(bogus=1)})
-        with pytest.raises(json_format.ParseError):
+        with pytest.raises(json_format.ParseError):  # known field, invalid value
             transport.stream("a2a.send", {"message": message(role="ROLE_ADMIN")})
+        aliases = [
+            message(task_id="someone-elses-task"),
+            message(context_id="c-9"),
+            message(parts=[{"text": "x", "media_type": "text/plain"}]),
+            message(parts=[{"text": "x", "metadata": {"ok": 1}, "mediaType": "t", "bogus": 1}]),
+        ]
+        for alias in aliases:
+            with pytest.raises(ValueError):
+                await transport.request("a2a.send", {"message": alias})
+            with pytest.raises(ValueError):
+                transport.stream("a2a.send", {"message": alias})
+        with pytest.raises(ValueError):
+            await transport.request("a2a.send", {"message": message(), "tenant_id": "t"})
         for bad in ["", None, 7]:
             with pytest.raises(ValueError):
                 await transport.request("a2a.get", {"id": bad})

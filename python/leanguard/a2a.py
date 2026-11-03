@@ -311,11 +311,44 @@ class A2AGRPCTransport:
             raise ValueError("invalid remote task id")
         return value
 
-    @staticmethod
-    def _parse(payload, message_type):
+    @classmethod
+    def _parse(cls, payload, message_type):
         from google.protobuf.json_format import ParseDict
 
+        cls._check_names(payload, message_type.DESCRIPTOR)
         return ParseDict(payload, message_type())
+
+    @staticmethod
+    def _repeated(field):
+        # protobuf 6 added `is_repeated` and protobuf 7 removed `label`.
+        if hasattr(field, "is_repeated"):
+            return field.is_repeated
+        return field.label == field.LABEL_REPEATED
+
+    @classmethod
+    def _check_names(cls, value, descriptor):
+        # ParseDict also accepts the snake_case proto field names. Only the JSON
+        # names are allowed here, so the fields the policy saw are the fields sent.
+        # Well-known types such as Struct carry arbitrary JSON and are left alone.
+        if not isinstance(value, dict) or descriptor.file.package == "google.protobuf":
+            return
+        fields = {field.json_name: field for field in descriptor.fields}
+        for key, item in value.items():
+            field = fields.get(key)
+            if field is None:
+                raise ValueError(f"unknown A2A field {key!r} in {descriptor.name}")
+            if field.message_type is None:
+                continue
+            if field.message_type.GetOptions().map_entry:
+                nested = field.message_type.fields_by_name["value"].message_type
+                items = value.values() if isinstance(item, dict) else ()
+            elif cls._repeated(field):
+                nested, items = field.message_type, item if isinstance(item, list) else ()
+            else:
+                nested, items = field.message_type, (item,)
+            if nested is not None:
+                for element in items:
+                    cls._check_names(element, nested)
 
     @staticmethod
     def _frame(message):
@@ -443,8 +476,14 @@ class A2AClient:
         finally:
             self.agent._host._release_interaction(event)
 
-    @staticmethod
-    def _message(message):
+    _MESSAGE_KEYS = frozenset(
+        {"messageId", "contextId", "taskId", "role", "parts", "metadata", "extensions"}
+        | {"referenceTaskIds"}
+    )
+    _PART_KEYS = frozenset({"text", "raw", "url", "data", "metadata", "filename", "mediaType"})
+
+    @classmethod
+    def _message(cls, message):
         # Copy before awaiting so callers cannot change admitted bytes in flight.
         message = json.loads(canonical(message))
         if (
@@ -455,6 +494,14 @@ class A2AClient:
             or not isinstance(message.get("parts"), list)
         ):
             raise ValueError("send requires an A2A 1.0 user Message with messageId and parts")
+        # Only the A2A 1.0 JSON field names are admitted. Protobuf JSON parsers, and
+        # so A2A servers, also accept the snake_case proto names, which would let
+        # `task_id` reach the wire while the scope checks saw no `taskId`.
+        if not message.keys() <= cls._MESSAGE_KEYS or any(
+            not isinstance(part, dict) or not part.keys() <= cls._PART_KEYS
+            for part in message["parts"]
+        ):
+            raise ValueError("A2A Message or Part has a field outside the A2A 1.0 JSON schema")
         for key in ("taskId", "contextId"):
             if key in message and (not isinstance(message[key], str) or not message[key]):
                 raise ValueError("taskId/contextId must be nonempty strings when supplied")
