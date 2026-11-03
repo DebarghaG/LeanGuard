@@ -1,4 +1,4 @@
-"""Guarded A2A 1.0 HTTP+JSON client, with polling and SSE task updates.
+"""Guarded A2A 1.0 client over HTTP+JSON or gRPC, with polling and streamed task updates.
 
 Peer profiles are trusted host code: they decide the resource and charge of each
 message. Remote responses are untrusted data and cannot create identity,
@@ -199,6 +199,205 @@ class A2AHTTPTransport:
         await self.aclose()
 
 
+_GRPC_LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
+_GRPC_MAX_MESSAGE = 8 * 1024 * 1024
+
+
+class _GRPCStream:
+    """Owns one server-streaming call and converts each response to a frame."""
+
+    def __init__(self, call, frame):
+        self._call = call
+        self._frame = frame
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        import grpc
+
+        if self._call.cancelled():
+            # A locally cancelled call raises CancelledError from read(); a
+            # closed stream should end quietly, like a closed async generator.
+            raise StopAsyncIteration
+        response = await self._call.read()
+        if response is grpc.aio.EOF:
+            raise StopAsyncIteration
+        return self._frame(response)
+
+    async def aclose(self):
+        # Cancel, then wait for the call to settle so no work is left running once
+        # the client releases its close fence. `code()` never raises.
+        self._call.cancel()
+        await self._call.code()
+
+
+class A2AGRPCTransport:
+    """Transport for the A2A 1.0 gRPC binding.
+
+    `target` is a `host:port` pair. Channels use TLS; pass `credentials` for mTLS
+    or a private root. Plain-text channels are allowed for loopback targets only.
+    Alternatively pass your own `channel`, on its own: it is trusted host
+    configuration, like the HTTP transport's client, so its target, credentials
+    and options are yours to get right, and this class cannot check them. Retries
+    are off on channels it creates,
+    so Send Message is never retried automatically. Responses are capped at 8 MiB
+    per message. Unary calls get a deadline; streams get none, since a
+    subscription may stay open for a long time. `metadata` is sent with every
+    call, as a mapping or a sequence of pairs. The protocol version is carried by
+    the proto package, so no version metadata is sent. Outbound payloads are
+    parsed strictly and unknown fields are rejected.
+    """
+
+    def __init__(
+        self,
+        target=None,
+        *,
+        channel=None,
+        credentials=None,
+        insecure=False,
+        timeout=30,
+        metadata=None,
+    ):
+        import grpc
+
+        from .a2a_grpc import a2a_pb2, a2a_pb2_grpc
+
+        self._pb2 = a2a_pb2
+        self.timeout = timeout
+        pairs = metadata.items() if isinstance(metadata, Mapping) else metadata or ()
+        self.metadata = tuple((str(key), value) for key, value in pairs) or None
+        self._owns_channel = channel is None
+        if channel is not None and (target is not None or credentials is not None or insecure):
+            raise ValueError("pass either a channel or target/credentials/insecure, not both")
+        if channel is None:
+            if target is None:
+                raise ValueError("A2A gRPC transport requires a target or a channel")
+            host = self._host(target)
+            options = [
+                ("grpc.enable_retries", 0),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MESSAGE),
+            ]
+            if insecure:
+                if host not in _GRPC_LOOPBACK:
+                    raise ValueError("plain-text A2A gRPC is allowed for loopback targets only")
+                channel = grpc.aio.insecure_channel(target, options=options)
+            else:
+                channel = grpc.aio.secure_channel(
+                    target, credentials or grpc.ssl_channel_credentials(), options=options
+                )
+        self.channel = channel
+        self.stub = a2a_pb2_grpc.A2AServiceStub(channel)
+
+    @staticmethod
+    def _host(target):
+        # Plain host:port only. Resolver schemes such as dns:/// or unix: would
+        # bypass the loopback check, so they are rejected.
+        if not isinstance(target, str) or not target or "/" in target:
+            raise ValueError("A2A gRPC target must be host:port")
+        parsed = urlparse("//" + target)
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or not parsed.hostname
+            or parsed.port is None
+        ):
+            raise ValueError("A2A gRPC target must be host:port, without credentials")
+        return parsed.hostname
+
+    @staticmethod
+    def _task_id(value):
+        if not isinstance(value, str) or not value:
+            raise ValueError("invalid remote task id")
+        return value
+
+    @classmethod
+    def _parse(cls, payload, message_type):
+        from google.protobuf.json_format import ParseDict
+
+        cls._check_names(payload, message_type.DESCRIPTOR)
+        return ParseDict(payload, message_type())
+
+    @staticmethod
+    def _repeated(field):
+        # protobuf 6 added `is_repeated` and protobuf 7 removed `label`.
+        if hasattr(field, "is_repeated"):
+            return field.is_repeated
+        return field.label == field.LABEL_REPEATED
+
+    @classmethod
+    def _check_names(cls, value, descriptor):
+        # ParseDict also accepts the snake_case proto field names. Only the JSON
+        # names are allowed here, so the fields the policy saw are the fields sent.
+        # Well-known types such as Struct carry arbitrary JSON and are left alone.
+        if not isinstance(value, dict) or descriptor.file.package == "google.protobuf":
+            return
+        fields = {field.json_name: field for field in descriptor.fields}
+        for key, item in value.items():
+            field = fields.get(key)
+            if field is None:
+                raise ValueError(f"unknown A2A field {key!r} in {descriptor.name}")
+            if field.message_type is None:
+                continue
+            if field.message_type.GetOptions().map_entry:
+                nested = field.message_type.fields_by_name["value"].message_type
+                items = value.values() if isinstance(item, dict) else ()
+            elif cls._repeated(field):
+                nested, items = field.message_type, item if isinstance(item, list) else ()
+            else:
+                nested, items = field.message_type, (item,)
+            if nested is not None:
+                for element in items:
+                    cls._check_names(element, nested)
+
+    @staticmethod
+    def _frame(message):
+        from google.protobuf.json_format import MessageToDict
+
+        # Default options give camelCase keys and enum names, the JSON shapes the
+        # client already validates. Fields at their default value are omitted.
+        return MessageToDict(message)
+
+    def _unary(self, operation, payload):
+        pb2 = self._pb2
+        if operation == "a2a.send":
+            return self.stub.SendMessage, self._parse(payload, pb2.SendMessageRequest), False
+        if operation == "a2a.get":
+            return self.stub.GetTask, pb2.GetTaskRequest(id=self._task_id(payload["id"])), True
+        if operation == "a2a.cancel":
+            request = pb2.CancelTaskRequest(id=self._task_id(payload["id"]))
+            return self.stub.CancelTask, request, True
+        raise ValueError("unsupported A2A operation")
+
+    async def request(self, operation, payload):
+        method, request, wrap = self._unary(operation, payload)
+        response = await method(request, timeout=self.timeout, metadata=self.metadata)
+        frame = self._frame(response)
+        return {"task": frame} if wrap else frame
+
+    def stream(self, operation, payload):
+        pb2 = self._pb2
+        if operation == "a2a.send":
+            request = self._parse(payload, pb2.SendMessageRequest)
+            call = self.stub.SendStreamingMessage(request, metadata=self.metadata)
+        elif operation == "a2a.subscribe":
+            request = pb2.SubscribeToTaskRequest(id=self._task_id(payload["id"]))
+            call = self.stub.SubscribeToTask(request, metadata=self.metadata)
+        else:
+            raise ValueError("unsupported streaming operation")
+        return _GRPCStream(call, self._frame)
+
+    async def aclose(self):
+        if self._owns_channel:
+            await self.channel.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        await self.aclose()
+
+
 class A2AClient:
     """Sends A2A messages for one authenticated agent to an allowlist of peers.
 
@@ -277,8 +476,14 @@ class A2AClient:
         finally:
             self.agent._host._release_interaction(event)
 
-    @staticmethod
-    def _message(message):
+    _MESSAGE_KEYS = frozenset(
+        {"messageId", "contextId", "taskId", "role", "parts", "metadata", "extensions"}
+        | {"referenceTaskIds"}
+    )
+    _PART_KEYS = frozenset({"text", "raw", "url", "data", "metadata", "filename", "mediaType"})
+
+    @classmethod
+    def _message(cls, message):
         # Copy before awaiting so callers cannot change admitted bytes in flight.
         message = json.loads(canonical(message))
         if (
@@ -289,6 +494,14 @@ class A2AClient:
             or not isinstance(message.get("parts"), list)
         ):
             raise ValueError("send requires an A2A 1.0 user Message with messageId and parts")
+        # Only the A2A 1.0 JSON field names are admitted. Protobuf JSON parsers, and
+        # so A2A servers, also accept the snake_case proto names, which would let
+        # `task_id` reach the wire while the scope checks saw no `taskId`.
+        if not message.keys() <= cls._MESSAGE_KEYS or any(
+            not isinstance(part, dict) or not part.keys() <= cls._PART_KEYS
+            for part in message["parts"]
+        ):
+            raise ValueError("A2A Message or Part has a field outside the A2A 1.0 JSON schema")
         for key in ("taskId", "contextId"):
             if key in message and (not isinstance(message[key], str) or not message[key]):
                 raise ValueError("taskId/contextId must be nonempty strings when supplied")

@@ -42,7 +42,9 @@ integration you replace that fixture with your own trusted approval screen.
 To learn LeanGuard step by step, start with the [tutorials](docs/tutorials/README.md).
 
 This is `0.2.0rc2`, a release candidate for dogfooding. Everything in the
-repository, including the policy-authoring skill, is MIT-licensed. The
+repository, including the policy-authoring skill, is MIT-licensed, except the
+vendored A2A protocol definition in `python/leanguard/a2a_grpc`, which the A2A
+project publishes under the Apache License 2.0. The
 [release guide](scripts/README.md#release-candidates) explains how to build
 platform wheels, which bundle the native engine and need only Linux and Python
 3.12 at runtime.
@@ -165,8 +167,9 @@ actions, resources, limits and expiry. Every call is charged against the budget
 of each ancestor grant, so two workers can't each spend their parent's full
 allowance. Local tools keep their usual policy and approval checks.
 
-The optional A2A 1.0 client (HTTP and JSON) can send messages, poll, cancel, and
-stream task updates, and it tracks which agent owns each remote task and context.
+The optional A2A 1.0 client can send messages, poll, cancel, and stream task
+updates over either the HTTP+JSON binding (`.[a2a]`) or the gRPC binding
+(`.[a2a-grpc]`), and it tracks which agent owns each remote task and context.
 
 The [multi-agent guide](docs/multi-agent.md) covers the trust boundary, the API,
 which parts of A2A are supported, and the LeanLTL contracts, including a proof

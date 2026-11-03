@@ -16,6 +16,7 @@ Run these commands from the repository root after an editable install
 | `scripts/release.py`, `scripts/check_install.py` | Build release candidates and check an installed wheel |
 | `scripts/setup.sh` | Install pinned dependencies, build the runtime and run the demo |
 | `scripts/emit_schemas.py` | Generate Lean schema declarations from the benchmark's tool definitions |
+| `scripts/gen_a2a_grpc.py` | Regenerate the A2A gRPC stubs in `python/leanguard/a2a_grpc` from the vendored `a2a.proto` |
 | `scripts/conformance.py` | Run the Dogwood article examples through the native engine |
 | `scripts/experiments/` | Local model benchmarks, dataset import, replay and scoring |
 | `examples/custom_policy/` | A standalone Lean package with its own safety proof, audit and Python integration |
