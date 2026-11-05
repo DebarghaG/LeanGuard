@@ -19,3 +19,4 @@ build/
 runs/
 private/
 *.log
+examples/alcf/lake-manifest.json
