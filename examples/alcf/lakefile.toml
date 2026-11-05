@@ -1,0 +1,18 @@
+name = "ALCFGuard"
+defaultTargets = ["ALCF", "ALCFAudit", "alcf-guard"]
+
+# In a separate repository, replace path with git and an immutable release rev.
+[[require]]
+name = "LeanGuard"
+path = "../.."
+
+[[lean_lib]]
+name = "ALCF"
+roots = ["ALCF", "ALCFMain"]
+
+[[lean_lib]]
+name = "ALCFAudit"
+
+[[lean_exe]]
+name = "alcf-guard"
+root = "ALCFMain"

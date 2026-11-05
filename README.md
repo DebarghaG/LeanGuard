@@ -83,6 +83,10 @@ For a larger worked example, the [Dogwood guide encodings](examples/dogwood/READ
 port all 86 examples from the Dogwood guide and compare them against the Dogwood
 interpreter.
 
+The [ALCF example](examples/alcf/README.md) encodes the Argonne agent safety and
+etiquette rules for PBS job submission, with an adapter for the ALCF `pbsMCP`
+agent and a fake scheduler to run the policy locally.
+
 ## Connecting your backend
 
 The Python package exports `Engine`, `GuardHost`, `Adapter`, `Snapshot`,
