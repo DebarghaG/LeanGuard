@@ -9,7 +9,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from leanguard import Engine, GuardHost, ReadOnlyToolError, replay
 
 ROOT = Path(__file__).resolve().parents[1]
