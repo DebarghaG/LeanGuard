@@ -1,0 +1,3 @@
+dify-plugin==0.11.0
+mcp==1.30.0
+./wheels/leanguard_remote-0.1.0-py3-none-any.whl

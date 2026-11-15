@@ -1,0 +1,31 @@
+identity:
+  author: leanguard
+  name: guarded_call
+  label: {en_US: Guarded call}
+description:
+  human: {en_US: Request an operation subject to the compiled policy.}
+  llm: Request one guarded operation. Report denial and uncertain outcomes; do not retry automatically.
+parameters:
+  - name: action
+    type: string
+    required: true
+    form: llm
+    label: {en_US: Action}
+    human_description: {en_US: Exact action identifier from the policy catalog.}
+    llm_description: Exact action identifier.
+  - name: arguments_json
+    type: string
+    required: true
+    form: llm
+    label: {en_US: Arguments as JSON}
+    human_description: {en_US: JSON object containing the exact tool arguments.}
+    llm_description: JSON object string. Preserve integer digits exactly.
+  - name: proposal_id
+    type: string
+    required: false
+    form: llm
+    label: {en_US: Reviewed proposal ID}
+    human_description: {en_US: Optional ID from a separate trusted approval flow.}
+    llm_description: Use only the proposal ID supplied by the trusted approval flow.
+extra:
+  python: {source: tools/guarded_call.py}

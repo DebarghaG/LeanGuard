@@ -1,0 +1,16 @@
+version: 0.1.0
+type: plugin
+author: leanguard
+name: leanguard
+label: {en_US: LeanGuard}
+description: {en_US: Execute covered tools through a LeanGuard-owned backend.}
+icon: icon.svg
+created_at: 2026-11-15T00:00:00Z
+resource: {memory: 268435456}
+plugins:
+  tools: [provider/leanguard.yaml]
+meta:
+  version: 0.0.1
+  arch: [amd64, arm64]
+  runner: {language: python, version: '3.12', entrypoint: main}
+  minimum_dify_version: 1.19.0

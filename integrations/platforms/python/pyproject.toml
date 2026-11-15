@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "leanguard-remote"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["mcp==1.30.0"]
+
+[project.optional-dependencies]
+dify = ["dify-plugin==0.11.0"]
+langflow = ["lfx==1.13.2"]
+test = ["pytest==9.0.2", "pytest-asyncio==1.3.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["leanguard_remote"]
