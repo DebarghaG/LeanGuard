@@ -356,7 +356,12 @@ class A2AGRPCTransport:
 
         # Default options give camelCase keys and enum names, the JSON shapes the
         # client already validates. Fields at their default value are omitted.
-        return MessageToDict(message)
+        frame = MessageToDict(message)
+        if "message" in frame:
+            # Direct Message responses require parts, including an empty list.
+            # Protobuf repeated fields have no presence and omit that default.
+            frame["message"].setdefault("parts", [])
+        return frame
 
     def _unary(self, operation, payload):
         pb2 = self._pb2
