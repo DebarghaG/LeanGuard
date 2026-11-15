@@ -39,6 +39,29 @@ def test_bounded_scheduler_halts_without_starting_remaining_jobs():
     assert batch.halted["categories"] == {"BadRequestError": 1}
 
 
+@pytest.mark.parametrize(
+    "error",
+    [None, "ExperimentHalted: stopped", "ValueError: protocol retry budget exhausted"],
+)
+def test_recorded_adapter_failure_halts_even_without_an_integration_exception(error):
+    result = {"guard": {"adapter_errors": 1}}
+    if error is not None:
+        result["error"] = error
+    halts = []
+    batch = run_batch(
+        [(i,) for i in range(6)],
+        lambda i, stopped: result,
+        concurrency=1,
+        max_errors=1,
+        on_result=lambda *args: None,
+        on_halt=halts.append,
+    )
+    assert batch.results == [result]
+    assert batch.unstarted == 5
+    assert halts == [batch.halted]
+    assert batch.halted["categories"] == {"adapter_error": 1}
+
+
 def test_scheduler_completes_normal_jobs_and_preserves_unhandled_failure():
     halts = []
     batch = run_batch(

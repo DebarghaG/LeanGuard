@@ -19,6 +19,8 @@ class BatchResult:
 
 def integration_error(result: dict) -> str | None:
     """Return the result's integration error, if any; enough of these halt the batch."""
+    if result.get("guard", {}).get("adapter_errors", 0):
+        return "adapter_error"
     error = result.get("error", "")
     if not error or error.startswith("ExperimentHalted:"):
         return None
@@ -42,8 +44,6 @@ def integration_error(result: dict) -> str | None:
         return category
     if "scoring replay differs" in error:
         return "replay_mismatch"
-    if result.get("guard", {}).get("adapter_errors", 0):
-        return "adapter_error"
     return None
 
 
