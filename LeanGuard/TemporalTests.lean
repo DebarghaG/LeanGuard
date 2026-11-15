@@ -126,4 +126,18 @@ theorem future_error_ignored :
     evaluationErrors errorContext (.once none (errorAt "future"))
       [event "now" 90, event "future" 100] = [] := by decide
 
+private def namedError (name : String) : Formula Check := check name fun c ↦
+  .error (c.history.head?.map Event.id |>.getD "empty")
+
+theorem since_error_order_and_duplicates :
+    evaluationErrors errorContext (.since none (namedError "left") (namedError "right"))
+      trace = ["right: now", "right: approval", "left: now", "right: old", "left: now",
+        "left: approval"] := by decide
+
+theorem nested_since_error_window_origin :
+    evaluationErrors errorContext
+      (.previous none (.since (some 10) (namedError "left") (namedError "right")))
+      [event "now" 100, event "previous" 90, event "boundary" 80, event "expired" 79] =
+        ["right: previous", "right: boundary", "left: previous"] := by decide
+
 end LeanGuard.TemporalTests
