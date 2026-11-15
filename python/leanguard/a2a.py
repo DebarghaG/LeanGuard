@@ -316,7 +316,26 @@ class A2AGRPCTransport:
         from google.protobuf.json_format import ParseDict
 
         cls._check_names(payload, message_type.DESCRIPTOR)
+        cls._check_numbers(payload)
         return ParseDict(payload, message_type())
+
+    @classmethod
+    def _check_numbers(cls, value):
+        # Struct/Value encode JSON numbers as doubles. Rounding an admitted ID or
+        # charge would send a different operation from the one the profile saw.
+        if type(value) is int:
+            try:
+                if float(value) == value:
+                    return
+            except OverflowError:
+                pass
+            raise ValueError("A2A gRPC integer cannot be represented exactly")
+        elif isinstance(value, dict):
+            for item in value.values():
+                cls._check_numbers(item)
+        elif isinstance(value, list):
+            for item in value:
+                cls._check_numbers(item)
 
     @staticmethod
     def _repeated(field):
