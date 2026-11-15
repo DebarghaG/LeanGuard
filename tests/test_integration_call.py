@@ -4,7 +4,7 @@ import threading
 import pytest
 from leanguard import GuardHost
 from leanguard.demo import MemoryTools
-from leanguard.integrations.call import bind_async_guarded_call, bind_guarded_call
+from leanguard.integrations.call import GuardedCallError, bind_async_guarded_call, bind_guarded_call
 
 
 @pytest.fixture
@@ -73,3 +73,31 @@ async def test_unknown_outcome_is_preserved_without_leaking_exception(host):
     assert "error" not in result
     assert "private" not in str(result)
     assert host.events()[-1]["kind"] == "unknown"
+
+
+def test_snapshot_failure_is_safe_for_sdk_error_messages(host):
+    def fail(*args):
+        raise RuntimeError("private snapshot credential")
+
+    host.adapter.snapshot = fail
+    with pytest.raises(GuardedCallError, match="outcome may be unknown") as caught:
+        bind_guarded_call(host)("read", {})
+    assert "private" not in str(caught.value)
+    assert str(caught.value.__context__) == "private snapshot credential"
+    assert host.adapter.calls == []
+
+
+def test_outcome_storage_failure_never_becomes_a_denial(host):
+    record = host._record
+
+    def fail_outcome(command):
+        if command["op"] == "observe":
+            raise RuntimeError("private storage diagnostic")
+        return record(command)
+
+    host._record = fail_outcome
+    with pytest.raises(GuardedCallError, match="do not retry") as caught:
+        bind_guarded_call(host)("read", {})
+    assert "private" not in str(caught.value)
+    assert len(host.adapter.calls) == 1
+    assert host.events()[-1]["kind"] == "dispatch"

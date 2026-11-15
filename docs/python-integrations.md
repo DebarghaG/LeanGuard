@@ -73,6 +73,13 @@ allowed call can have an `unknown` outcome: it might have taken effect. These
 factories never retry it. Configure surrounding SDK retry/caching middleware so
 it cannot bypass the host or turn an uncertain result into a successful one.
 
+Host exceptions become a generic `GuardedCallError` because SDKs may place their
+text in model-visible tool messages. It does not claim denial or absence of
+effects; trusted Python callers can inspect its original exception context.
+The MCP server uses this same result/error boundary, including removal of the
+private `error` field from recorded failure/unknown results. Do not depend on
+that diagnostic field in model-facing code.
+
 Async factories run the complete synchronous host transaction on one worker
 thread. Cancellation waits for that work to settle before propagating. It does
 not interrupt the backend, undo effects, or provide a timeout guarantee. Give

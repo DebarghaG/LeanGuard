@@ -5,6 +5,15 @@ from collections.abc import Callable
 from typing import Any
 
 
+class GuardedCallError(RuntimeError):
+    """Model-safe failure; it does not establish whether a dispatch occurred."""
+
+
+FAILURE_MESSAGE = (
+    "Guarded call failed; its outcome may be unknown. Ask the operator; do not retry automatically."
+)
+
+
 def bind_guarded_call(host) -> Callable:
     """Bind a tool to a trusted host (or a bound MultiAgentHost agent).
 
@@ -30,7 +39,12 @@ def bind_guarded_call(host) -> Callable:
             raise TypeError("action must be a string and arguments must be an object")
         if proposal_id is not None and not isinstance(proposal_id, str):
             raise TypeError("proposal_id must be a string or null")
-        result = host.execute(action, arguments, proposal_id=proposal_id)
+        try:
+            result = host.execute(action, arguments, proposal_id=proposal_id)
+        except Exception:  # noqa: BLE001 -- SDK error messages must not expose trusted diagnostics.
+            # SDKs commonly turn exception strings into tool messages. The
+            # original context remains available to trusted Python callers.
+            raise GuardedCallError(FAILURE_MESSAGE) from None
         if not result["allow"]:
             return {
                 "allow": False,
