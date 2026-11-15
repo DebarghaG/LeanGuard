@@ -119,7 +119,9 @@ context manager so the engine process, database and journal lock are released.
 `execute` checks the call with Lean before running it. The returned `CallResult`
 always has `allow`, `request_id`, `reasons`, `errors` and `evidence`, and admitted
 calls also report an `outcome`. Errors in the host or transport are raised as
-exceptions, and nothing has been dispatched when that happens.
+exceptions. Admission failures prevent dispatch, but an exception while recording
+the outcome can occur after the tool has changed state; it does not mean a retry
+is safe.
 
 If a tool raises, LeanGuard records the outcome as unknown, since the call might
 have changed state before failing. Raise `ReadOnlyToolError` instead when you know
