@@ -11,6 +11,8 @@ def test_failure_classification_excludes_policy_and_model_outcomes():
     assert integration_error({"error": "ValueError: scoring replay differs"}) == "replay_mismatch"
     assert integration_error({"error": "ExperimentHalted: stopped"}) is None
     assert integration_error({"error": "ValueError: protocol retry budget exhausted"}) is None
+    assert integration_error({"error": "BadRequestError: protocol retry budget exhausted"}) is None
+    assert integration_error({"error": None}) is None
     assert integration_error({"guard": {"native_denials": 5}}) is None
 
 
@@ -37,6 +39,38 @@ def test_bounded_scheduler_halts_without_starting_remaining_jobs():
     assert batch.unstarted == 8
     assert halts == [batch.halted]
     assert batch.halted["categories"] == {"BadRequestError": 1}
+
+
+@pytest.mark.parametrize(
+    "error,category",
+    [
+        (None, "adapter_error"),
+        ("", "adapter_error"),
+        ("ExperimentHalted: stopped", "adapter_error"),
+        ("ValueError: protocol retry budget exhausted", "adapter_error"),
+        ("BadRequestError: bad chat template", "BadRequestError"),
+        ("AttributeError: broken recorder", "AttributeError"),
+        ("ValueError: scoring replay differs", "replay_mismatch"),
+        ("BadRequestError: protocol retry budget exhausted", "adapter_error"),
+    ],
+)
+def test_recorded_adapter_failure_halts_with_expected_category(error, category):
+    result = {"guard": {"adapter_errors": 1}}
+    if error is not None:
+        result["error"] = error
+    halts = []
+    batch = run_batch(
+        [(i,) for i in range(6)],
+        lambda i, stopped: result,
+        concurrency=1,
+        max_errors=1,
+        on_result=lambda *args: None,
+        on_halt=halts.append,
+    )
+    assert batch.results == [result]
+    assert batch.unstarted == 5
+    assert halts == [batch.halted]
+    assert batch.halted["categories"] == {category: 1}
 
 
 def test_scheduler_completes_normal_jobs_and_preserves_unhandled_failure():

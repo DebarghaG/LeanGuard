@@ -19,11 +19,10 @@ class BatchResult:
 
 def integration_error(result: dict) -> str | None:
     """Return the result's integration error, if any; enough of these halt the batch."""
-    error = result.get("error", "")
-    if not error or error.startswith("ExperimentHalted:"):
-        return None
-    if "protocol retry budget exhausted" in error:
-        return None
+    error = result.get("error") or ""
+    if error.startswith("ExperimentHalted:") or "protocol retry budget exhausted" in error:
+        # Ignore this outcome without discarding independent adapter failures.
+        error = ""
     category = error.split(":", 1)[0]
     if category in {
         "BadRequestError",
