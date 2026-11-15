@@ -27,6 +27,7 @@ tau = ["jsonschema>=4.20"]
 
 [project.scripts]
 leanguard = "leanguard.cli:main"
+leanguard-policy = "leanguard.policy_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["python"]
