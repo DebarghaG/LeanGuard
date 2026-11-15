@@ -222,6 +222,53 @@ def test_user_tool_cannot_promote_itself_to_assistant_or_supply_identity(retail)
     assert summary["diagnostics"]["requestor_role_conflict"] == 1
 
 
+@pytest.mark.parametrize(
+    "call_ids,response_ids",
+    [
+        (["same", "same"], ["same"]),
+        (["same", "same"], ["same", "same"]),
+        (["same", "same"], [None, None]),
+        (["a", "b"], ["a", "a"]),
+        ([["bad"]], [["bad"]]),
+        ([{"bad": "id"}], [None]),
+        ([None], [{"bad": "id"}]),
+    ],
+)
+def test_duplicate_ids_leave_responses_unattributed(call_ids, response_ids):
+    calls = [{"id": id, "name": "lookup"} for id in call_ids]
+    responses = [{"response_id": id, "content": "alice"} for id in response_ids]
+    pairs, orphans = paired_responses(calls, responses)
+    assert all(response is None for response, _ in pairs)
+    assert orphans == len(responses)
+
+
+@pytest.mark.parametrize("response_ids", [["b", "a"], [None, None]])
+def test_unique_ids_and_complete_serial_batches_still_pair(response_ids):
+    calls = [{"id": id, "name": "lookup"} for id in ["a", "b"]]
+    responses = [{"response_id": id, "content": str(i)} for i, id in enumerate(response_ids)]
+    pairs, orphans = paired_responses(calls, responses)
+    expected = list(reversed(responses)) if response_ids[0] else responses
+    assert [response for response, _ in pairs] == expected
+    assert orphans == 0
+
+
+def test_duplicate_call_id_cannot_supply_identity_evidence(retail):
+    calls, _, _ = check(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    tool("find_user_id_by_email", {"email": "a@b.co"}, "same"),
+                    tool("get_user_details", {"user_id": "alice"}, "same"),
+                ],
+            },
+            {"role": "tool", "tool_call_id": "same", "content": "alice"},
+        ],
+        retail,
+    )
+    assert not calls[1]["rules"]["retail.identity"]
+
+
 def test_unobserved_collections_and_postmutation_payment_state_remain_unknown():
     state = Observations("telecom")
     state.customer = "c"
