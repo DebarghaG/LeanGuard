@@ -20,9 +20,10 @@ and approval authority outside model reach. See the shared contract in #70.
 | Structured authoring and Lean compilation | #78 | #77 |
 | Native scenarios and exact artifact review | #79 | #78 |
 | Local policy workbench | #80 | #79 |
+| Trusted tool-call approval screen | #81 | #80 |
+| Dependency updates and maintenance guide | #82 | #72; merge after the other tracks |
 
-The approval-screen and maintenance PRs are linked from roadmap issues #32 and
-#31. Merge each dependency before its child; retarget child PRs to main once the
+Merge each dependency before its child; retarget child PRs to main once the
 base is merged. Keep the maintenance configuration until last, when every listed
 package directory exists on main. No PR enables auto-merge.
 
