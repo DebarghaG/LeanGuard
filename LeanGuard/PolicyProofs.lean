@@ -19,11 +19,32 @@ def ErrorFree (ctx : Context) : Formula Check → History → Prop
       ErrorFree ctx q (h.drop i) ∧ ∀ j < i, ErrorFree ctx p (h.drop j)
   | .within scope p, h => ErrorFree ctx p (projectAtHead scope h)
 
+private theorem cachedSuffix_eq_drop (h : History) (i : Nat) :
+    h.tails.toArray[i]! = h.drop i := by
+  rw [List.getElem!_toArray]
+  by_cases hi : i < h.tails.length
+  · rw [getElem!_pos h.tails i hi, List.getElem_tails]
+  · rw [getElem!_neg h.tails i hi]
+    exact (List.drop_eq_nil_of_le (by simp only [List.length_tails] at hi; omega)).symm
+
+/-- Caching suffixes preserves the complete diagnostic list, including order and duplicates. -/
+theorem evaluationErrors_since (ctx : Context) (w : Option Nat) (p q : Formula Check)
+    (h : History) :
+    evaluationErrors ctx (.since w p q) h = (List.range h.length).flatMap (fun i ↦
+      if inWindow w h (h.drop i) then
+        evaluationErrors ctx q (h.drop i) ++ (List.range i).flatMap (fun j ↦
+          evaluationErrors ctx p (h.drop j))
+      else []) := by
+  simp only [evaluationErrors, cachedSuffix_eq_drop]
+
 theorem evaluationErrors_eq_nil_iff (ctx : Context) (p : Formula Check) (h : History) :
     evaluationErrors ctx p h = [] ↔ ErrorFree ctx p h := by
   induction p generalizing h with
   | atom a => cases ha : a.run { ctx with history := h } <;>
       simp [evaluationErrors, ErrorFree, ha]
+  | since w p q ihp ihq =>
+    rw [evaluationErrors_since]
+    simp_all [ErrorFree, List.flatMap_eq_nil_iff, List.mem_range, ← inWindow_correct]
   | _ => simp_all [evaluationErrors, ErrorFree, List.flatMap_eq_nil_iff,
       List.mem_range, ← inWindow_correct]
 

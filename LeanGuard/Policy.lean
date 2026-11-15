@@ -138,11 +138,13 @@ def evaluationErrors (ctx : Context) : Formula Check → History → List String
     if inWindow w h h.tail then evaluationErrors ctx p h.tail else []
   | .once w p, h => (List.range h.length).flatMap fun i ↦
     if inWindow w h (h.drop i) then evaluationErrors ctx p (h.drop i) else []
-  | .since w p q, h => (List.range h.length).flatMap fun i ↦
-    if inWindow w h (h.drop i) then
-      evaluationErrors ctx q (h.drop i) ++ (List.range i).flatMap fun j ↦
-        evaluationErrors ctx p (h.drop j)
-    else []
+  | .since w p q, h =>
+    let suffixes := h.tails.toArray
+    (List.range h.length).flatMap fun i ↦
+      if inWindow w h suffixes[i]! then
+        evaluationErrors ctx q suffixes[i]! ++ (List.range i).flatMap fun j ↦
+          evaluationErrors ctx p suffixes[j]!
+      else []
   | .within scope p, h => evaluationErrors ctx p (projectAtHead scope h)
 
 def validationErrors (pack : PolicyPack) (ctx : Context) : List String :=
