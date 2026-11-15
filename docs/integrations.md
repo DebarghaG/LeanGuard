@@ -118,7 +118,57 @@ integration jobs must install their dependencies and fail if tests are skipped.
 3. [Execution service #34](https://github.com/DebarghaG/LeanGuard/issues/34)
    enables non-Python and remote clients without moving dispatch outside the host.
 4. Each issue below receives an implementation or deployment PR and an explicit
-   coverage record. The waves indicate dependency order, not exclusion from scope.
+   coverage record. The waves indicate dependency order. Eligibility exclusions below supersede the original inventory.
+
+## Eligibility and current scope
+
+The owner requires at least **5,000 GitHub stars**, active development in the
+preceding six months, and no archived, maintenance-only, or superseded codebase.
+Stars are counted on the maintained implementation, not inherited from a retired
+repository. Recent automated pushes alone do not establish development activity.
+The following snapshot was collected from GitHub on 2026-11-15.
+
+| Maintained repository | Stars | Latest release date | Scope |
+| --- | ---: | --- | --- |
+| [strands-agents/harness-sdk](https://github.com/strands-agents/harness-sdk) | 9,216 | 2026-11-13 | Included |
+| [langchain-ai/langchain](https://github.com/langchain-ai/langchain) | 149,555 | 2026-11-15 | Included |
+| [langchain-ai/langgraph](https://github.com/langchain-ai/langgraph) | 44,991 | 2026-11-14 | Included |
+| [langchain-ai/deepagents](https://github.com/langchain-ai/deepagents) | 31,298 | 2026-11-13 | Included |
+| [openai/openai-agents-python](https://github.com/openai/openai-agents-python) | 30,693 | 2026-10-15 | Included |
+| [anthropics/claude-agent-sdk-python](https://github.com/anthropics/claude-agent-sdk-python) | 8,551 | 2026-11-13 | Included |
+| [google/adk-python](https://github.com/google/adk-python) | 22,226 | 2026-11-12 | Included |
+| [microsoft/agent-framework](https://github.com/microsoft/agent-framework) | 14,693 | 2026-11-13 | Included |
+| [microsoft/semantic-kernel](https://github.com/microsoft/semantic-kernel) | 28,771 | 2026-11-07 | Excluded; see reasons below |
+| [microsoft/autogen](https://github.com/microsoft/autogen) | 61,849 | 2025-09-30 | Excluded; see reasons below |
+| [crewAIInc/crewAI](https://github.com/crewAIInc/crewAI) | 60,949 | 2026-11-12 | Included |
+| [run-llama/llama_index](https://github.com/run-llama/llama_index) | 52,909 | 2026-11-13 | Included |
+| [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai) | 21,222 | 2026-11-12 | Included |
+| [agno-agi/agno](https://github.com/agno-agi/agno) | 43,199 | 2026-11-12 | Included |
+| [deepset-ai/haystack](https://github.com/deepset-ai/haystack) | 27,010 | 2026-11-10 | Included |
+| [huggingface/smolagents](https://github.com/huggingface/smolagents) | 30,382 | 2026-05-29 | Included |
+| [stanfordnlp/dspy](https://github.com/stanfordnlp/dspy) | 39,077 | 2026-11-10 | Included |
+| [camel-ai/camel](https://github.com/camel-ai/camel) | 18,034 | 2026-03-22 | Included |
+| [letta-ai/letta](https://github.com/letta-ai/letta) | 25,448 | 2026-05-14 | Excluded; see reasons below |
+| [vercel/ai](https://github.com/vercel/ai) | 27,984 | 2026-11-13 | Included |
+| [mastra-ai/mastra](https://github.com/mastra-ai/mastra) | 29,532 | 2026-11-13 | Included |
+| [spring-projects/spring-ai](https://github.com/spring-projects/spring-ai) | 9,651 | 2026-10-23 | Included |
+| [langchain4j/langchain4j](https://github.com/langchain4j/langchain4j) | 13,406 | 2026-10-28 | Included |
+| [n8n-io/n8n](https://github.com/n8n-io/n8n) | 210,567 | 2026-11-13 | Included |
+| [langgenius/dify](https://github.com/langgenius/dify) | 161,201 | 2026-11-04 | Included |
+| [langflow-ai/langflow](https://github.com/langflow-ai/langflow) | 156,671 | 2026-11-10 | Included |
+| [FlowiseAI/Flowise](https://github.com/FlowiseAI/Flowise) | 55,572 | 2026-07-29 | Excluded; see reasons below |
+
+Excluded implementation issues: Semantic Kernel (#43) is superseded by Microsoft
+Agent Framework; AutoGen (#44) explicitly reports that it is no longer maintained;
+Flowise (#62) is archived. Letta (#53) moved development from its 25,448-star
+legacy repository to `letta-ai/letta-code` (3,845 stars), below the threshold.
+Bedrock Agents (#58) is a managed service without a separately qualified framework
+repository; Strands is the AWS-oriented framework target.
+
+CAMEL qualifies through feature development in September 2026, despite later
+automated QR-code commits. See its [commit history](https://github.com/camel-ai/camel/commits/master/).
+The [AutoGen README](https://github.com/microsoft/autogen#readme) takes precedence
+over its inconsistent archived API flag.
 
 ## Framework inventory
 
