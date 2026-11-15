@@ -6,10 +6,12 @@ grpc = pytest.importorskip("grpc")
 json_format = pytest.importorskip("google.protobuf.json_format")
 pytest.importorskip("google.api.annotations_pb2")
 
-from leanguard.a2a import A2AGRPCTransport
+import test_a2a
+from leanguard.a2a import A2AClient, A2AGRPCTransport, Peer
 from leanguard.a2a_grpc import a2a_pb2, a2a_pb2_grpc
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+setup = test_a2a.setup
 
 
 def task(state="WORKING", id="task-1", context="context-1"):
@@ -193,6 +195,45 @@ async def test_grpc_send_returns_direct_agent_messages(peer):
     servicer.frames = [reply]
     async with A2AGRPCTransport(target, insecure=True) as transport:
         assert await transport.request("a2a.send", {"message": message()}) == reply
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_grpc_empty_message_parts_settle_guarded_sends(peer, setup, streaming):
+    servicer, target = peer
+    _, agent, _, _, configured = setup
+    reply = {
+        "message": {
+            "messageId": "reply-1",
+            "contextId": "context-1",
+            "role": "ROLE_AGENT",
+            "parts": [],
+        }
+    }
+    servicer.frames = [reply]
+    async with A2AGRPCTransport(target, insecure=True) as transport:
+        client = A2AClient(agent, {"remote": Peer(transport, configured.profile)})
+        if streaming:
+            results = [result async for result in client.send_stream("remote", message())]
+            assert len(results) == 1
+            result = results[0]
+        else:
+            result = await client.send("remote", message())
+        assert result["outcome"] == "success"
+        assert result["result"] == reply
+
+        # The reply records its context and settles the send, allowing a continuation.
+        servicer.frames = [
+            {"message": {**reply["message"], "messageId": "reply-2", "parts": [{"text": "Done"}]}}
+        ]
+        followup = await client.send(
+            "remote", message(messageId="message-2", contextId="context-1")
+        )
+        assert followup["allow"]
+        assert followup["outcome"] == "success"
+    assert [name for name, _ in servicer.requests] == [
+        "SendStreamingMessage" if streaming else "SendMessage",
+        "SendMessage",
+    ]
 
 
 async def test_grpc_streams_yield_each_response_as_a_frame(peer):
