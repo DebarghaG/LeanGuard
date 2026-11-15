@@ -90,21 +90,31 @@ def paired_responses(calls, responses):
     """
     result = [(None, "missing_or_ambiguous")] * len(calls)
     used = set()
+    call_ids = Counter(call["id"] for call in calls if isinstance(call.get("id"), str))
+    by_id = {}
+    for j, response in enumerate(responses):
+        if isinstance(response.get("response_id"), str):
+            by_id.setdefault(response["response_id"], []).append(j)
     for index, call in enumerate(calls):
-        matches = [
-            j
-            for j, r in enumerate(responses)
-            if j not in used and call.get("id") and r.get("response_id") == call["id"]
-        ]
-        if len(matches) == 1:
-            j = matches[0]
+        call_id = call.get("id")
+        if (
+            isinstance(call_id, str)
+            and call_id
+            and call_ids[call_id] == len(by_id.get(call_id, [])) == 1
+        ):
+            j = by_id[call_id][0]
             result[index] = (responses[j], "call_id")
             used.add(j)
     if len(calls) == len(responses):
         for index, call in enumerate(calls):
+            call_id = call.get("id")
+            if call_id is not None and (
+                not isinstance(call_id, str) or (call_id and call_ids[call_id] != 1)
+            ):
+                continue
             if result[index][0] is None and index not in used:
                 response = responses[index]
-                if not response.get("response_id") and (
+                if response.get("response_id") in (None, "") and (
                     not response.get("name") or response["name"] == call["name"]
                 ):
                     result[index] = (response, "position_same_batch")
