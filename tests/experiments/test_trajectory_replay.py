@@ -163,6 +163,46 @@ def test_replay_preserves_observed_flight_schedule():
     assert native["arrival_epoch"] == epoch("2024-05-21T07:00:00")
 
 
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("What are the health requirements for flying?", ""),
+        (
+            "Please cancel because my meeting has moved. How is the weather?",
+            "other: Please cancel because my meeting has moved. How is the weather?",
+        ),
+        ("Please cancel due to health reasons. How is the weather?", "health"),
+        ("Please cancel due to health reasons. I need a receipt for my employer.", "health"),
+    ],
+)
+def test_replay_uses_only_affirmative_customer_reason_evidence(message, expected):
+    state = Observations("airline")
+    state.user_message(message)
+    state.user_message("Yes, please proceed. What is the weather forecast?")
+    facts, _, _ = state.facts("cancel_reservation", {"reservation_id": "r"})
+    assert facts["cancellation_reason"] == expected
+
+
+@pytest.mark.parametrize("previous", ["health", "weather"])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Unfortunately, I need to cancel because my meeting has moved.",
+        "Please cancel for personal reasons.",
+        "Could you cancel because my meeting has moved?",
+        "Please cancel. This is because my meeting has moved.",
+    ],
+)
+def test_replay_replaces_previous_coverage_with_uncovered_reason(message, previous):
+    state = Observations("airline")
+    state.user_message(f"My reason is {previous}.")
+    assert state.reason == previous
+    state.user_message(message)
+    state.user_message("Yes, please proceed. What is the weather forecast?")
+    facts, _, _ = state.facts("cancel_reservation", {"reservation_id": "r"})
+    assert facts["cancellation_reason"] == "other: " + message
+
+
 def test_recorded_code_is_never_executed_or_accepted_as_facts(retail, tmp_path):
     marker = tmp_path / "executed"
     expression = f"__import__('pathlib').Path({str(marker)!r}).touch()"

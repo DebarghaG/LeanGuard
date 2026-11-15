@@ -378,8 +378,8 @@ def observe_customer(host, confirmation, message):
         ]
         if len(matches) == 1:
             host.observe_trusted("identity", matches[0])
-    # Keep the customer's reason verbatim. Only explicit health or weather words map
-    # to the insurance categories.
+    # Only supported affirmative reason statements map to insurance categories;
+    # recognized uncovered cancellation explanations remain verbatim.
     if adapter.domain == "airline":
         adapter.user_evidence["cancellation_reason"] = customer_reason(
             content, adapter.user_evidence.get("cancellation_reason", "")

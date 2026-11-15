@@ -204,45 +204,78 @@ class ReliableAgent(LLMAgent):
 
 
 def customer_reason(content, previous=""):
-    """Map a stated reason to a covered insurance category when it plainly is one.
+    """Recognize a small affirmative grammar, not category words in arbitrary prose.
 
-    Matching is deliberately narrow. Anything unclassified stays verbatim and never
-    counts as a health or weather reason.
+    Accept a bare reason, an explicit reason declaration, a cancellation due to a
+    reason, or "I have a health problem/issue". Category promotion requires a whole
+    affirmative sentence. Detect replacement explanations more broadly to avoid
+    retaining earlier coverage. Messages with no recognized evidence retain the
+    previous reason. This is not a general language classifier.
     """
     lower = content.lower().replace("’", "'")
-    choices = [
-        r for r in ("health", "weather", "change of plan") if re.search(r"\b" + r + r"\b", lower)
-    ]
-    if not choices:
+    category = r"\b(?:health|weather|change of plan)\b"
+    cancel_word = r"\bcancel(?:l?ing|lation|led)?\b"
+    mentions_cancellation = re.search(cancel_word, lower)
+    reason = (
+        r"(?:a |the |my |bad |severe )?(?P<reason>health|weather|change of plan)"
+        r"(?: reasons?| problems?| issues?| conditions?)?"
+    )
+    declaration = r"(?:my (?:cancellation )?reason is|the reason is) "
+    request = (
+        r"(?:please |i (?:want|need|would like) to |i would like to proceed with |"
+        r"i(?: am|'m) )?cancel(?:l?ing)?\b"
+    )
+    cancellation = (
+        request + r"(?: (?:my |the |this )?(?:flights?|reservation|booking|trip|it))? "
+        r"(?:due to|because of|for) "
+    )
+    affirmative = (
+        rf"(?:{declaration}|{cancellation}|(?:it is |this is )?(?:due to|because of) )?{reason}"
+    )
+    reasons = set()
+    other = False
+    for sentence, punctuation in re.findall(r"([^.!?;\n]+)([.!?;\n]*)", lower):
+        sentence = sentence.strip()
         generic = re.search(
             r"\b(?:change(?:ment)? de plans?|change of plans|(?:my )?plans? (?:have )?changed|"
             r"booked by mistake)\b",
-            lower,
+            sentence,
         )
-        explained_cancellation = re.search(r"\bcancel(?:l?ing|lation|led)?\b", lower) and re.search(
-            r"\b(?:because|since|due to|reason is)\b", lower
-        )
-        if generic or explained_cancellation:
-            clauses = re.split(r"[.!?;\n]+|\b(?:but|however)\b", lower)
-            if generic and any(
-                generic.group() in clause
-                and re.search(r"\b(no|not|never|without|pas|jamais|\w+n't)\b", clause)
-                for clause in clauses
+        explained = (
+            mentions_cancellation and re.search(r"\b(?:because|since|due to|reason is)\b", sentence)
+        ) or (re.search(cancel_word, sentence) and re.search(r"\bfor\b", sentence))
+        if "?" in punctuation:
+            # An incidental question does not borrow cancellation context from
+            # another sentence, but a new explained cancellation request replaces it.
+            other = other or bool(explained and re.search(cancel_word, sentence))
+            continue
+        replacement = generic or explained or re.search(declaration, sentence)
+        # Retractions remain conservative, but negation in a different clause
+        # (for example a cabin preference) must not negate an affirmative reason.
+        for clause in re.split(r"\b(?:but|however)\b", sentence):
+            if (
+                re.search(category, clause) or (generic and generic.group() in clause)
+            ) and re.search(
+                r"\b(no|not|never|without|neither|nor|cannot|pas|jamais|\w+n't)\b", clause
             ):
                 return ""
-            if re.search(r"\b(?:not|never|don't)\s+(?:want to\s+)?cancel\b", lower):
-                return ""
-            # Keep a distinct prefix: raw prose must never equal a covered enum.
-            return "other: " + content.strip()
-        return previous
-    if len(choices) != 1:
+        if re.search(r"\b(?:not|never|don't)\s+(?:want to\s+)?cancel\b", sentence):
+            return ""
+        if len(set(re.findall(category, sentence))) > 1:
+            return ""
+        match = re.fullmatch(affirmative, sentence)
+        if match:
+            reasons.add(match["reason"])
+        elif re.fullmatch(r"i have a health (?:problem|issue)", sentence):
+            reasons.add("health")
+        elif replacement:
+            other = True
+    if other:
+        # Never let an incidental category assertion override an uncovered reason.
+        return "other: " + content.strip()
+    if len(reasons) > 1:
         return ""
-    reason = choices[0]
-    clauses = re.split(r"[.!?;\n]+|\b(?:but|however)\b", lower)
-    relevant = [c for c in clauses if re.search(r"\b" + reason + r"\b", c)]
-    if any(re.search(r"\b(no|not|never|without|neither|nor|cannot|\w+n't)\b", c) for c in relevant):
-        return ""
-    return reason
+    return next(iter(reasons), previous)
 
 
 def observe_simulator_travel(host):
