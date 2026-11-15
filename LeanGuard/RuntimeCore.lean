@@ -1,4 +1,4 @@
-import LeanGuard.Policy
+import LeanGuard.Inspection
 import LeanGuard.A2A
 
 namespace LeanGuard
@@ -41,6 +41,7 @@ def manifest (pack : PolicyPack) : Json :=
     ("protocol", toJson (1 : Nat)),
     ("schemas", Json.mkObj pack.schemas),
     ("schema_max_depth", toJson (64 : Nat)),
+    ("inspection", inspectPack pack),
     ("rules", toJson (pack.rules.map fun r ↦ Json.mkObj [
       ("id", toJson r.id), ("effect", toJson (reprStr r.effect)),
       ("actions", toJson r.actions), ("source", toJson r.source),
