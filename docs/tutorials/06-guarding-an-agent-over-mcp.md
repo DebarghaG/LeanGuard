@@ -113,9 +113,13 @@ asyncio.run(main())
 
 ## Run it
 
+Install the MCP extra into the LeanGuard environment, then run the client. Use
+your checkout's path if it differs from `~/LeanGuard`:
+
 ```sh
 cd ~/notes-tutorial
 source ~/LeanGuard/.venv/bin/activate
+python -m pip install -e "$HOME/LeanGuard[mcp]"
 python agent.py
 ```
 
