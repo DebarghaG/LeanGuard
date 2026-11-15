@@ -1,0 +1,42 @@
+{
+  "name": "@leanguard/framework-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    "./vercel": "./dist/vercel.js",
+    "./mastra": "./dist/mastra.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@ai-sdk/mcp": "2.0.99",
+    "@mastra/mcp": "2.9.0",
+    "@mastra/core": "1.83.0"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/mcp": {
+      "optional": true
+    },
+    "@mastra/mcp": {
+      "optional": true
+    },
+    "@mastra/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/mcp": "2.0.99",
+    "@mastra/mcp": "2.9.0",
+    "@mastra/core": "1.83.0",
+    "ai": "7.0.173",
+    "@types/node": "26.6.6",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}
