@@ -63,7 +63,39 @@ def test_reason_persists_across_incidental_confirmation():
     assert customer_reason("Please cancel due to health reasons.") == "health"
     assert customer_reason("Yes please cancel it", "health") == "health"
     assert customer_reason("It is not a health reason", "health") == ""
+    assert customer_reason("It could be health or weather.", "health") == ""
     assert customer_reason("My reason is a change of plan", "health") == "change of plan"
+
+
+@pytest.mark.parametrize("previous", ["", "health", "weather", "other: my meeting moved"])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "What are the health requirements for flying?",
+        "Yes, please cancel. How is the weather?",
+        "Yes, please cancel. I need a receipt for my employer.",
+        "The weather is nice today.",
+        "Does insurance cover health reasons?",
+        "If I have a health problem, would insurance cover it?",
+    ],
+)
+def test_incidental_category_mentions_preserve_previous_reason(content, previous):
+    assert customer_reason(content, previous) == previous
+
+
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        ("Health reasons.", "health"),
+        ("My cancellation reason is weather.", "weather"),
+        ("I need to cancel my flight because of bad weather.", "weather"),
+        ("Please cancel due to health reasons. How is the weather?", "health"),
+        ("Please cancel due to health reasons. I need a receipt for my employer.", "health"),
+        ("I have a health problem. Please cancel due to weather.", ""),
+    ],
+)
+def test_complete_affirmative_reason_statements(content, expected):
+    assert customer_reason(content) == expected
 
 
 @pytest.mark.parametrize(
@@ -88,6 +120,19 @@ def test_reason_negation_does_not_cross_sentences(content, expected):
         "My plans have changed. Please cancel the reservation.",
         "Since there are no suitable same-day flights, I would like to proceed with canceling my reservation.",
         "Please cancel because my meeting has moved.",
+        "Please cancel because my meeting has moved. How is the weather?",
+        "Please cancel because my meeting has moved. I have a health problem.",
+        "My reason is that my meeting has moved.",
+        "Please cancel due to health insurance costs.",
+        "Unfortunately, I need to cancel because my meeting has moved.",
+        "Please cancel for personal reasons.",
+        "Please cancel for a work meeting.",
+        "Health reasons. Actually, I need to cancel because my meeting has moved.",
+        "Actually, my reason is that my meeting has moved.",
+        "Could you cancel because my meeting has moved?",
+        "Please cancel. This is because my meeting has moved.",
+        "Health reasons. Please cancel. This is because my meeting has moved.",
+        'The policy says "cancel due to health reasons".',
         "I need to cancel a flight that I booked by mistake about 10 hours ago.",
     ],
 )
@@ -319,9 +364,33 @@ def test_travel_sensor_binds_only_matching_owned_phone():
         ("I want to cancel due to a change of plan.", False),
         ('La raison est "change de plan". Je veux annuler mes vols.', False),
         ("Please cancel because my meeting has moved.", False),
+        ("Please cancel because my meeting has moved. How is the weather?", False),
+        ("What are the health requirements for flying?", False),
+        ("Please cancel due to health insurance costs.", False),
+        ("Please cancel due to health reasons. How is the weather?", True),
+        ("Please cancel due to health reasons. I need a receipt for my employer.", True),
+        ("I need to cancel my flight because of bad weather.", True),
     ],
 )
 def test_customer_reason_reaches_native_cancellation_rule(tmp_path, reason, allowed):
+    assert_native_cancellation(tmp_path, reason, allowed)
+
+
+@pytest.mark.parametrize("previous", ["health", "weather"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Unfortunately, I need to cancel because my meeting has moved.",
+        "Please cancel for personal reasons.",
+        "Could you cancel because my meeting has moved?",
+        "Please cancel. This is because my meeting has moved.",
+    ],
+)
+def test_new_uncovered_reason_overrides_previous_native_coverage(tmp_path, reason, previous):
+    assert_native_cancellation(tmp_path, reason, False, previous=previous)
+
+
+def assert_native_cancellation(tmp_path, reason, allowed, previous=""):
     from scripts.experiments.benchmark import observe_customer
 
     adapter = TauAdapter("airline")
@@ -336,6 +405,11 @@ def test_customer_reason_reaches_native_cancellation_rule(tmp_path, reason, allo
         clock=lambda: adapter.clock,
     ) as host:
         customer_ui = SimpleNamespace(user_messages=[])
+        if previous:
+            observe_customer(
+                host, customer_ui, UserMessage(role="user", content=f"My reason is {previous}.")
+            )
+            assert adapter.user_evidence["cancellation_reason"] == previous
         observe_customer(
             host,
             customer_ui,
