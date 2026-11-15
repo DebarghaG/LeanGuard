@@ -194,10 +194,9 @@ def flightUpdate : Formula Check := check "flight_change_constraints" fun c ↦ 
   let oldCabin ← str r "cabin"
   let cabin ← str c.arguments "cabin"
   let sameFlights ← if fs.size != old.size then pure false else
-    Data.all (fs.zip old |>.map fun pair ↦ Json.arr #[pair.1, pair.2]) fun pair ↦ do
-      let pair ← pair.getArr?
-      return (← str pair[0]! "flight_number") == (← str pair[1]! "flight_number") &&
-        (← str pair[0]! "date") == (← str pair[1]! "date")
+    (Array.all · id) <$> (fs.zip old).mapM fun (f, o) ↦ do
+      return (← str f "flight_number") == (← str o "flight_number") &&
+        (← str f "date") == (← str o "date")
   if !sameFlights && oldCabin == "basic_economy" then return false
   if cabin != oldCabin && !(← notFlown c) then return false
   if !(← itinerary c fs (← str r "origin") (← str r "destination")
