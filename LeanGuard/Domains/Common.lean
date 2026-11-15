@@ -25,9 +25,9 @@ def argumentOwner (key : String) : Formula Check := check s!"arguments.{key}.own
 def knownIdentity (lookupActions : List String) : Formula Check :=
   check "verified_customer" fun c ↦ do
     let customer ← str c.facts "customer_id"
-    let identities := c.history.reverse.filter fun e ↦
+    let identity := c.history.reverse.find? fun e ↦
       sameConversation c.request e && e.kind == "success" && lookupActions.contains e.action
-    return customer != "" && identities.head?.any (fun e ↦ e.resource == customer)
+    return customer != "" && identity.any (fun e ↦ e.resource == customer)
 
 def userProvidedIdentity : Formula Check :=
   check "user_supplied_identity" fun c ↦ do
