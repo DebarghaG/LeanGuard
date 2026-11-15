@@ -123,6 +123,70 @@ async def test_grpc_send_accepts_every_a2a_json_field_name(peer):
     assert sent.metadata["snake_case_key"]["nested_key"][1] == "two"
 
 
+@pytest.mark.parametrize("value", [2**53 + 1, -(2**53 + 1), 2**100 + 1, 10**400])
+@pytest.mark.parametrize("field", ["data", "metadata"])
+async def test_grpc_rejects_lossy_json_numbers_before_sending(peer, value, field):
+    servicer, target = peer
+    payload = {"message": message(parts=[{field: {"nested": [value]}}])}
+    async with A2AGRPCTransport(target, insecure=True) as transport:
+        with pytest.raises(ValueError, match="cannot be represented exactly"):
+            await transport.request("a2a.send", payload)
+        with pytest.raises(ValueError, match="cannot be represented exactly"):
+            transport.stream("a2a.send", payload)
+    assert servicer.requests == []
+
+
+async def test_grpc_preserves_exact_json_numbers(peer):
+    servicer, target = peer
+    values = [0, -1, 2**53 - 1, 2**53, 2**53 + 2, 2**100, 0.25, True, None]
+    payload = {"message": message(parts=[{"data": values}])}
+    async with A2AGRPCTransport(target, insecure=True) as transport:
+        assert await transport.request("a2a.send", payload) == task()
+    sent = json_format.MessageToDict(servicer.requests[0][1])
+    assert sent["message"]["parts"][0]["data"] == values
+
+
+async def test_guarded_grpc_lossy_resource_never_reaches_peer(peer, tmp_path):
+    from leanguard import MultiAgentHost
+    from leanguard.a2a import A2AClient, Peer, PeerFacts
+    from leanguard.demo import MemoryTools
+
+    servicer, target = peer
+    resource_id = 2**53 + 1
+    with MultiAgentHost(
+        "multiagent.example",
+        tmp_path / "agents.sqlite",
+        MemoryTools(),
+        principal="alice",
+        session="conversation",
+        clock=lambda: 100,
+    ) as host:
+        agent = host.grant(
+            "planner",
+            workflow="workflow",
+            actions=["a2a.send"],
+            resources=[f"account/{resource_id}"],
+            peers=["remote"],
+            calls=10,
+            amount=0,
+            expires=1000,
+        )
+
+        def profile(operation, envelope):
+            admitted_id = envelope["payload"]["message"]["parts"][0]["data"]["account_id"]
+            return PeerFacts(f"account/{admitted_id}")
+
+        async with A2AGRPCTransport(target, insecure=True) as transport:
+            client = A2AClient(agent, {"remote": Peer(transport, profile)})
+            payload = message(parts=[{"data": {"account_id": resource_id}}])
+            result = await client.send("remote", payload)
+            assert result["allow"] and result["outcome"] == "unknown"
+            assert result["error"] == "ValueError"
+            assert servicer.requests == []
+            assert dict(host._status()["usages"])[agent.delegation] == {"calls": 1, "amount": 0}
+            assert not (await client.send("remote", {**payload, "messageId": "retry"}))["allow"]
+
+
 async def test_grpc_send_returns_direct_agent_messages(peer):
     servicer, target = peer
     reply = {"message": {"messageId": "m-2", "role": "ROLE_AGENT", "parts": [{"text": "Done"}]}}
