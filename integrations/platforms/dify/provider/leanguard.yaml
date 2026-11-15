@@ -1,0 +1,18 @@
+identity:
+  author: leanguard
+  name: leanguard
+  label: {en_US: LeanGuard}
+  description: {en_US: Guarded backend execution}
+  icon: icon.svg
+credentials_for_provider:
+  url:
+    type: text-input
+    required: true
+    label: {en_US: Service URL}
+  token:
+    type: secret-input
+    required: true
+    label: {en_US: Service credential}
+tools: [tools/guarded_call.yaml]
+extra:
+  python: {source: provider/leanguard.py}

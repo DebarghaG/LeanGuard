@@ -1,0 +1,41 @@
+{
+  "name": "n8n-nodes-leanguard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LeanGuard-owned tool execution for n8n agents",
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/LeanGuardApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/LeanGuard/LeanGuard.node.js"
+    ]
+  },
+  "dependencies": {
+    "@leanguard/framework-tools": "file:../../typescript",
+    "@langchain/core": "1.4.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "3.25.76"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "2.47.2"
+  },
+  "devDependencies": {
+    "n8n-workflow": "2.47.2",
+    "typescript": "7.0.2",
+    "tsx": "4.23.15",
+    "@types/node": "26.6.6"
+  }
+}

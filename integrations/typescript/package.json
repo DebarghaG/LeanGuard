@@ -2,11 +2,13 @@
   "name": "@leanguard/framework-tools",
   "version": "0.1.0",
   "private": true,
+  "files": ["dist"],
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "exports": {
+    "./connection": "./dist/connection.js",
     "./vercel": "./dist/vercel.js",
     "./mastra": "./dist/mastra.js"
   },
