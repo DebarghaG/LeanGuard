@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>LeanGuard · Policy workbench</title>
+    <link rel="stylesheet" href="/workbench.css" />
+    <script src="/workbench.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to policy workspace</a>
+    <header class="topbar">
+      <a class="brand" href="/">LeanGuard <span>Policy workbench</span></a
+      ><span class="local">Local operator session</span>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <p class="eyebrow">POLICY WORKSPACE</p>
+        <h1>Make the rules<br />understandable.</h1>
+        <p class="muted">
+          Write a draft. Check real examples. Review the exact artifact.
+        </p>
+        <nav aria-label="Workbench steps">
+          <button data-view="author" class="nav active" aria-current="page">
+            <span>01</span> Write policy</button
+          ><button data-view="inspect" class="nav">
+            <span>02</span> Inspect compiled rules</button
+          ><button data-view="scenarios" class="nav">
+            <span>03</span> Try scenarios</button
+          ><button data-view="review" class="nav">
+            <span>04</span> Review artifact
+          </button>
+        </nav>
+        <div class="boundary">
+          <strong>Where the guarantee lives</strong>
+          <p>
+            The native engine decides. The host owns execution. A human reviews
+            the policy and the deployment assumptions.
+          </p>
+        </div>
+      </aside>
+      <main id="main" tabindex="-1">
+        <div class="workspace-head">
+          <div>
+            <p class="eyebrow">HUMAN POLICY REVIEW</p>
+            <h2 id="page-title">Write policy</h2>
+          </div>
+          <span id="stage" class="badge">Connecting</span>
+        </div>
+        <div
+          id="notice"
+          role="status"
+          aria-live="polite"
+          class="notice"
+          hidden
+        ></div>
+        <div id="error" role="alert" class="error" hidden></div>
+        <section id="author" class="view" aria-label="Write policy">
+          <div id="readonly" class="panel" hidden>
+            <h3>Native pack · read-only inspection</h3>
+            <p>
+              Custom Lean code is preserved in its original pack. Start a
+              separate template to author a new policy.
+            </p>
+            <button id="start-template" class="primary">
+              Start a separate template
+            </button>
+          </div>
+          <div id="editor">
+            <div class="panel">
+              <div class="section-head">
+                <div>
+                  <h3>Policy details</h3>
+                  <p class="muted">
+                    One document drives the forms, generated Lean, and compiled
+                    pack.
+                  </p>
+                </div>
+                <button id="save" class="primary">Save draft</button>
+              </div>
+              <div class="two-col">
+                <label
+                  >Pack name<input id="pack-name" autocomplete="off" /></label
+                ><label
+                  >What one amount unit means<input
+                    id="units"
+                    autocomplete="off"
+                /></label>
+              </div>
+              <p class="hint">
+                Units describe the trusted adapter's contract. The editor does
+                not convert money, time, or quantities.
+              </p>
+            </div>
+            <div class="section-head">
+              <div>
+                <h3>Tools this policy covers</h3>
+                <p class="muted">Define the arguments before writing rules.</p>
+              </div>
+              <button id="add-tool">Add tool</button>
+            </div>
+            <div id="tools" class="cards"></div>
+            <div class="section-head">
+              <div>
+                <h3>Policy rules</h3>
+                <p class="muted">
+                  A call needs a matching permit, every requirement, and no
+                  matching forbid. Errors deny.
+                </p>
+              </div>
+              <button id="add-rule">Add rule</button>
+            </div>
+            <div id="rules" class="cards"></div>
+            <details class="panel expert">
+              <summary>
+                Expert view · structured document and generated Lean
+              </summary>
+              <label
+                >Authoring JSON<textarea
+                  id="document-json"
+                  rows="15"
+                  spellcheck="false"
+                ></textarea></label
+              ><button id="apply-json">Validate and apply JSON</button>
+              <h4>Lean generated from the saved draft</h4>
+              <pre id="lean-source"></pre>
+            </details>
+            <div class="actionbar">
+              <p id="save-state">Draft ready for review.</p>
+              <button id="compile" class="primary">
+                Compile and audit this draft
+              </button>
+            </div>
+          </div>
+        </section>
+        <section
+          id="inspect"
+          class="view"
+          hidden
+          aria-label="Compiled policy inspection"
+        >
+          <div class="panel">
+            <h3>The exact native structure</h3>
+            <p>
+              Conditions, scopes and windows come from the compiled pack.
+              Descriptions are declared metadata; they do not prove that an
+              English requirement is correct.
+            </p>
+            <dl id="artifact-info" class="facts"></dl>
+          </div>
+          <div id="coverage" class="panel"></div>
+          <div id="inspection-rules" class="cards"></div>
+          <div id="claims" class="panel"></div>
+        </section>
+        <section
+          id="scenarios"
+          class="view"
+          hidden
+          aria-label="Native scenarios"
+        >
+          <div class="panel">
+            <div class="section-head">
+              <div>
+                <h3>Try a call before deploying</h3>
+                <p class="muted">
+                  These are fixture facts and histories. No real tool is
+                  dispatched.
+                </p>
+              </div>
+              <button id="run-scenarios" class="primary">
+                Run native scenarios
+              </button>
+            </div>
+            <label>Example to edit<select id="case-select"></select></label>
+            <div id="case-editor"></div>
+          </div>
+          <details class="panel expert">
+            <summary>Advanced · exact scenario JSON</summary>
+            <p class="hint">
+              Histories are chronological. Mark missing facts or incomplete
+              history explicitly. Delegated replay is not supported here.
+            </p>
+            <label
+              >Scenario corpus<textarea
+                id="scenario-json"
+                rows="16"
+                spellcheck="false"
+              ></textarea></label
+            ><button id="apply-corpus">Validate and run this JSON</button>
+          </details>
+          <div id="scenario-results" class="cards"></div>
+          <div id="comparison" class="panel" hidden></div>
+        </section>
+        <section id="review" class="view" hidden aria-label="Artifact review">
+          <div class="panel">
+            <h3>Review the artifact you would deploy</h3>
+            <p>
+              Compile the draft and run scenarios first. A review binds the
+              source, dependencies, inspection and binary by digest. Any change
+              requires a fresh review.
+            </p>
+            <label class="check"
+              ><input id="include-data" type="checkbox" /> Include private
+              scenario inputs, facts and diagnostics in the local export</label
+            >
+            <p class="hint">
+              Default exports contain a scenario summary and corpus digest. Full
+              replay needs the private corpus.
+            </p>
+            <button id="create-bundle" class="primary">
+              Create local review bundle
+            </button>
+          </div>
+          <div id="bundle-details" class="panel" hidden></div>
+          <div class="panel">
+            <h3>Publication stays with the deployment owner</h3>
+            <p>
+              Use the source and bundle digest in a Git change or PR. Verify the
+              accepted artifact before activation, keep review keys outside
+              agent access, and use a matching journal or a fresh lifecycle.
+            </p>
+            <p class="hint">
+              The local review authenticates this operator capability. It is
+              separate from production deployment approval and from approving an
+              individual tool call.
+            </p>
+          </div>
+        </section>
+        <footer>
+          <a href="/export/policy.json" id="export-policy"
+            >Export authoring JSON</a
+          ><a href="/export/Policy.lean" id="export-lean">Export Lean</a
+          ><a href="/export/inspection.json" id="export-inspection"
+            >Export inspection</a
+          ><span>No model API is used by this workbench.</span>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
