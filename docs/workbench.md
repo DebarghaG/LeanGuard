@@ -60,6 +60,11 @@ draft; it never rewrites the imported pack. Unsupported authoring constructs are
 rejected, not dropped. Pack-specific theorem claims are displayed separately
 from engine properties and deployment assumptions.
 
+Native integers outside JavaScript's exact range are displayed as decimal strings
+in browser state. JSON exports retain their original numeric types and digits.
+Scenario input travels as exact JSON text; the browser does not round it before
+native evaluation.
+
 ## Validation and usability
 
 `tests/test_workbench.py` exercises origin/authentication, stale writes, native

@@ -46,6 +46,11 @@ def test_operator_origin_authentication_and_stale_drafts(tmp_path):
             status, _, body = request("GET", "/api/state", Cookie=cookie)
             assert status == 200
             state = json.loads(body)
+            app.inspection = {"large_quota": 9007199254740993}
+            _, _, exact = request("GET", "/api/state", Cookie=cookie)
+            assert json.loads(exact)["inspection"]["large_quota"] == "9007199254740993"
+            _, _, exported = request("GET", "/export/inspection.json", Cookie=cookie)
+            assert json.loads(exported)["large_quota"] == 9007199254740993
             payload = json.dumps(
                 {"revision": state["revision"], "document_text": json.dumps(state["document"])}
             )

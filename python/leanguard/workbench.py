@@ -263,6 +263,17 @@ class PolicyWorkbench:
         raise ValueError("This export is not available yet")
 
 
+def _browser_numbers(value):
+    """Display large native integers exactly; JSON downloads retain native types."""
+    if type(value) is int and abs(value) > 2**53 - 1:
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _browser_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_browser_numbers(item) for item in value]
+    return value
+
+
 class OperatorServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -309,7 +320,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _json(self, status, value, **kwargs):
-        self._send(status, canonical(value).encode(), **kwargs)
+        self._send(status, canonical(_browser_numbers(value)).encode(), **kwargs)
 
     def _host(self):
         return self.headers.get_all("Host") == [self.server.origin.removeprefix("http://")]
