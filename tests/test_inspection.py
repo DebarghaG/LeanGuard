@@ -35,6 +35,11 @@ def test_inspection_preserves_manifest_and_parameters():
             "window_seconds": 3600,
             "scope": "principal",
         }
+        for rule in rules:
+            for node in atoms(rule["condition"]):
+                if not node["opaque"] and node["description"]["kind"] == "argument_schema":
+                    assert node["description"]["schema"] == tree["schemas"][rule["actions"][0]]
+                    assert node["description"]["max_depth"] == before["schema_max_depth"]
         tree["rules"].clear()
         assert engine.manifest == before
 
