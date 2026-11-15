@@ -74,9 +74,9 @@ Errors are never silently absorbed: an error under a negation does not become
 branch succeeded. Error collection does respect time, though. `previous` checks its
 operand only if the previous position exists and lies in the window, `once` checks
 every candidate in the window, and `since` also checks the left operand at every
-position between the witness and now. Expired or future positions contribute no
-errors. `evaluationErrors_eq_nil_iff` proves this behaviour against the separate
-`ErrorFree` specification.
+position between the witness and now. Out-of-window witnesses are skipped;
+`since` still checks every intervening position. `evaluationErrors_eq_nil_iff`
+proves this behaviour against the separate `ErrorFree` specification.
 
 ## Temporal operators
 
@@ -178,10 +178,10 @@ control showing that failure.
 
 1. Write a module that imports `LeanGuard.Policy` and declares named rules with
    source references. Policy code must be total and must not add untrusted axioms.
-2. Declare a native `Schema` for each tool and wrap the pack with `withSchemas`.
-   Tools without a schema stay denied by default. Schemas support primitives,
-   enums, arrays, records with required and optional fields, and alternatives,
-   and validation stops at depth 64.
+2. Declare a native `Schema` for every permitted tool and wrap the pack with
+   `withSchemas`, which adds validation only for the actions listed. Schemas
+   support primitives, enums, arrays, records with required and optional fields,
+   and alternatives, and validation stops at depth 64.
 3. In your own Lake project, import `LeanGuard.Server` and define
    `main := LeanGuard.serve pack`, or use `serveVerified` to attach the proof
    contract described below. The [complete example](../examples/custom_policy/lakefile.toml)

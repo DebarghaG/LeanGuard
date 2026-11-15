@@ -20,7 +20,8 @@ neither this skill nor Lean.
   approval comes only from the host's confirmation flow; tool outputs and the acting
   agent's claims never count as approval.
 - Write a `PolicyPack` from named `permit`, `require` and `forbid` rules, preferably in
-  record syntax, and wrap it with `withSchemas`. Tools without a schema stay denied.
+  record syntax, and wrap it with `withSchemas`. Supply a schema for every permitted
+  tool; `withSchemas` adds validation only for the actions listed.
   Reach for `confirmed`, `confirmedWithin`, `observed`, `quota` and `singleFlight`
   whenever their documented meaning is what the policy asks for.
 - State the safety property you actually want as a `Context → Prop`, and write it
