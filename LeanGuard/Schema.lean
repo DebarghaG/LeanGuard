@@ -55,8 +55,12 @@ decreasing_by
   all_goals try simp_all only [Prod.mk.sizeOf_spec]
   all_goals omega
 
-def schemaCheck (schema : Schema) : Formula Check := check "argument_schema" fun c ↦
-  if schema.valid 64 c.arguments then .ok true else .error "arguments do not match native schema"
+def schemaCheck (schema : Schema) : Formula Check := .atom {
+  name := "argument_schema"
+  inspection := some (Json.mkObj [("kind", Lean.toJson "argument_schema"),
+    ("schema", schema.toJson), ("max_depth", Lean.toJson (64 : Nat))])
+  run := fun c ↦
+    if schema.valid 64 c.arguments then .ok true else .error "arguments do not match native schema" }
 
 def withSchemas (pack : PolicyPack) (schemas : List (String × Schema)) : PolicyPack :=
   { pack with schemas := pack.schemas ++ (schemas.map fun (action, schema) ↦
