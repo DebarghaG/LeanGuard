@@ -28,12 +28,13 @@ tau = ["jsonschema>=4.20"]
 [project.scripts]
 leanguard = "leanguard.cli:main"
 leanguard-policy = "leanguard.policy_cli:main"
+leanguard-workbench = "leanguard.workbench:main"
 
 [tool.setuptools.packages.find]
 where = ["python"]
 
 [tool.setuptools.package-data]
-leanguard = ["py.typed"]
+leanguard = ["py.typed", "workbench_assets/*"]
 "leanguard.a2a_grpc" = ["a2a.proto", "a2a_pb2.pyi", "LICENSE.a2a"]
 
 [tool.pytest.ini_options]
