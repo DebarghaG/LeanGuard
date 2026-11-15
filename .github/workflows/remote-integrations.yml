@@ -1,0 +1,32 @@
+name: Remote framework integrations
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: integrations/typescript/package-lock.json
+      - name: Install native engine
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - run: lake update && lake exe cache get && lake build leanguard
+      - run: python -m pip install -e '.[test,mcp]'
+      - run: npm ci && npm run build && npm test
+        working-directory: integrations/typescript
+        env:
+          LEANGUARD_TEST_PYTHON: python
