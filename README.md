@@ -41,6 +41,9 @@ integration you replace that fixture with your own trusted approval screen.
 
 To learn LeanGuard step by step, start with the [tutorials](docs/tutorials/README.md).
 
+The [framework integration roadmap](docs/integrations.md) records proposed
+adapters, execution guarantees, and the tests required before claiming support.
+
 This is `0.2.0rc2`, a release candidate for dogfooding. Everything in the
 repository, including the policy-authoring skill, is MIT-licensed, except the
 vendored A2A protocol definition in `python/leanguard/a2a_grpc`, which the A2A
