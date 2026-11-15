@@ -2,9 +2,9 @@
 
 In this tutorial we will add two rules to the notes policy from
 [Tutorial 2](02-your-own-policy.md). The first says that the user's approval of
-a write lasts five minutes. The second limits the notebook to three calls in any
-hour. We'll control LeanGuard's clock ourselves, so we can move time forward and
-watch the decisions change.
+a write lasts five minutes. The second allows a write only when it would be among
+the first three calls in the last hour. We'll control LeanGuard's clock ourselves,
+so we can move time forward and watch the decisions change.
 
 You'll need to have finished Tutorial 2.
 
@@ -149,7 +149,7 @@ Ten minutes later, try one more:
 
 This time the hourly limit refuses it. Three calls have gone through in the last
 hour: the read at time 0 and the writes at 660 and 1200. The rule counts every
-call that reached the notebook, reads included.
+call that reached the notebook, reads included, but only writes are blocked by it.
 
 Now move the clock to 3700 seconds, a little over an hour after the first read,
 and try the same write again:
