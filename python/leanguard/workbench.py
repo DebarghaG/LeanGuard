@@ -272,6 +272,8 @@ class OperatorServer(ThreadingHTTPServer):
         self.cookie = secrets.token_urlsafe(32)
         super().__init__(("127.0.0.1", port), OperatorHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
+        # Cookies do not have port scope. Separate simultaneous operator apps.
+        self.cookie_name = f"leanguard_operator_{self.server_port}"
 
     @property
     def url(self):
@@ -299,7 +301,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
         if cookie:
             self.send_header(
                 "Set-Cookie",
-                f"leanguard_operator={self.server.cookie}; HttpOnly; SameSite=Strict; Path=/",
+                f"{self.server.cookie_name}={self.server.cookie}; HttpOnly; SameSite=Strict; Path=/",
             )
         if filename:
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -315,7 +317,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
     def _authenticated(self):
         try:
             cookies = SimpleCookie(self.headers.get("Cookie", ""))
-            value = cookies.get("leanguard_operator")
+            value = cookies.get(self.server.cookie_name)
             return value is not None and hmac.compare_digest(
                 value.value.encode(), self.server.cookie.encode()
             )

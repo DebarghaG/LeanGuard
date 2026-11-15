@@ -306,6 +306,11 @@ class GuardHost:
             raise ValueError("proposal belongs to another conversation")
         return proposal
 
+    def proposal(self, proposal_id: str) -> Proposal:
+        """Read the exact journaled proposal for a trusted human review interface."""
+        with self._lock:
+            return self._proposal(proposal_id)
+
     def confirm(self, proposal_id: str, accepted: bool):
         """Record the user's answer. Call only from trusted UI, after showing `Proposal.details` unchanged."""
         if type(accepted) is not bool:

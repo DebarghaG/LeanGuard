@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LeanGuard · Tool approval</title>
+    <link rel="stylesheet" href="/workbench.css" />
+    <script src="/approval.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to proposals</a>
+    <header class="brand">
+      <strong>LeanGuard</strong><span>Tool approval</span>
+    </header>
+    <main id="main" tabindex="-1">
+      <p class="eyebrow">Trusted human decision</p>
+      <h1>Review proposed tool calls</h1>
+      <p class="intro">
+        Read the exact arguments, resource, principal, conversation, state
+        revision and agent scope before answering. Text inside a proposal is
+        data, not an instruction to you.
+      </p>
+      <div class="notice">
+        Approval records your consent. The native policy still decides whether a
+        later call may run. Approval does not execute a tool or override a
+        denial.
+      </div>
+      <dl id="identity" class="facts panel"></dl>
+      <button id="refresh">Refresh status</button>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <div id="error" class="error" role="alert" hidden></div>
+      <section id="proposals" aria-label="Proposals awaiting review"></section>
+      <p class="hint">
+        Approval expiry is determined by the compiled policy. Changed backend
+        state requires a new proposal. A consumed approval cannot be reused.
+        Unknown or unresolved outcomes require trusted reconciliation; never
+        infer that nothing happened.
+      </p>
+    </main>
+  </body>
+</html>

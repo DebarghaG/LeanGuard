@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node browser.mjs",
-    "format:check": "prettier --check ../../python/leanguard/workbench_assets/* browser.mjs"
+    "test": "node browser.mjs && node approval.mjs",
+    "format:check": "prettier --check ../../python/leanguard/workbench_assets/* *.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.1",
