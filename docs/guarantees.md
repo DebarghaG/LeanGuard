@@ -132,10 +132,13 @@ fails, the engine channel stays closed until a full replay succeeds. On shutdown
 the host waits for the running tool to finish and its outcome to be recorded
 before releasing the journal lock.
 
-If the process dies after a dispatch is recorded but before its outcome is, that
-dispatch stays unresolved and blocks retries. LeanGuard doesn't promise
-exactly-once effects and doesn't reconcile unknown outcomes on its own; that
-needs an idempotency or reconciliation protocol with your backend.
+If the process dies or outcome recording fails after a dispatch is recorded, the
+journal can contain an unresolved dispatch even though the tool changed state.
+The built-in example and benchmark policies block further calls in the affected
+conversation or resource; custom policies must include an equivalent check.
+A host exception therefore does not imply that the tool had no effect. LeanGuard
+doesn't promise exactly-once effects and doesn't reconcile unknown outcomes on
+its own; that needs an idempotency or reconciliation protocol with your backend.
 
 ### The Dogwood example packs
 
