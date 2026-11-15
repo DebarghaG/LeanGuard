@@ -6,9 +6,12 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
+from .integrations.call import FAILURE_MESSAGE, GuardedCallError, bind_guarded_call
+
 
 def build_server(host, approval=None):
     server = MCPServer("LeanGuard")
+    execute = bind_guarded_call(host)
 
     @server.tool(structured_output=True)
     def policy_manifest() -> dict[str, Any]:
@@ -29,21 +32,13 @@ def build_server(host, approval=None):
         `proposal_id` points to an approval the user already gave. Passing one
         does not grant approval.
         """
-        if approval is not None and proposal_id is None and host.adapter.mutating(action):
-            proposal = host.prepare(action, arguments)
-            host.confirm(proposal.id, approval(proposal))
-            proposal_id = proposal.id
-        result = host.execute(action, arguments, proposal_id=proposal_id)
-        if not result["allow"]:
-            return {
-                "allow": False,
-                "request_id": result["request_id"],
-                "message": "Tool call denied by policy.",
-            }
-        return {
-            key: value
-            for key, value in result.items()
-            if key not in {"reasons", "errors", "evidence"}
-        }
+        try:
+            if approval is not None and proposal_id is None and host.adapter.mutating(action):
+                proposal = host.prepare(action, arguments)
+                host.confirm(proposal.id, approval(proposal))
+                proposal_id = proposal.id
+        except Exception:  # noqa: BLE001 -- SDK error messages must not expose trusted diagnostics.
+            raise GuardedCallError(FAILURE_MESSAGE) from None
+        return execute(action, arguments, proposal_id)
 
     return server
