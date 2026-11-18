@@ -7,12 +7,14 @@ The compiled Lean policy makes every decision.
 from __future__ import annotations
 
 import importlib
+import inspect
 import json
 import re
 import threading
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import TypedDict
 
 from .engine import digest
 from .host import ReadOnlyToolError, Snapshot
@@ -52,6 +54,38 @@ def wire_value(environment, value):
 
 def wire_text(value):
     return value if isinstance(value, str) else json.dumps(value, allow_nan=False)
+
+
+def _telecom_wire_types():
+    from tau2.domains.telecom.data_model import Bill, Customer, Device, Line, Plan
+
+    # These toolkit methods annotate their output as an unconstrained dict. Use the values
+    # actually returned by execute(), after τ²'s JSON conversion of plain dictionary fields.
+    line_change = TypedDict("LineChange", {"message": str, "line": Line})
+    return {
+        "enable_roaming": str,
+        "get_details_by_id": Customer | Line | Device | Bill | Plan,
+        "suspend_line": line_change,
+        "resume_line": line_change,
+        "get_data_usage": TypedDict(
+            "DataUsage",
+            {
+                "line_id": str,
+                "data_used_gb": str,
+                "data_limit_gb": str,
+                "data_refueling_gb": str,
+                "cycle_end_date": str,
+            },
+        ),
+        "refuel_data": TypedDict(
+            "RefuelResult",
+            {
+                "message": str,
+                "new_data_refueling_gb": str,
+                "charge": str,
+            },
+        ),
+    }
 
 
 def scaled(value, factor: int) -> int:
@@ -156,6 +190,34 @@ class TauAdapter:
 
     def tool_schemas(self):
         return {tool.name: tool.openai_schema["function"] for tool in self.environment.get_tools()}
+
+    def tool_contracts(self):
+        from pydantic import TypeAdapter
+        from pydantic.json_schema import GenerateJsonSchema
+
+        class WireSchema(GenerateJsonSchema):
+            def datetime_schema(self, schema):
+                # τ² passes model_dump() to json.dumps(default=str); timestamps may be naive.
+                return {"type": "string"}
+
+        wire_types = _telecom_wire_types() if self.domain == "telecom" else {}
+        contracts = {}
+        for tool in self.environment.get_tools():
+            handler = getattr(self.environment.tools, tool.name)
+            return_type = wire_types.get(tool.name, inspect.signature(tool).return_annotation)
+            contracts[tool.name] = {
+                **tool.openai_schema["function"],
+                "execution": f"{handler.__module__}.{handler.__qualname__}",
+                "mutates_backend": self.mutating(tool.name),
+                "result_schema": TypeAdapter(return_type).json_schema(
+                    mode="serialization", schema_generator=WireSchema
+                ),
+            }
+            if tool.name == "transfer_to_human_agents":
+                contracts[tool.name]["description"] = (
+                    "Return the simulator's handoff acknowledgement."
+                )
+        return contracts
 
     def mutating(self, action):
         return self.environment._is_mutating_tool(action)

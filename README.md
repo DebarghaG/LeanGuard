@@ -149,6 +149,9 @@ The server exposes three tools to the agent: `policy_manifest`,
 as well, or it can go around the guard. Approval, identity and policy loading
 are not available as agent tools.
 
+The [MCP tool contracts](docs/mcp-tool-contracts.md) describe the arguments,
+dispatch path, and return values for these endpoints and their backend actions.
+
 The command-line server has no approval screen, so writes that need approval are
 denied. To allow them, run the Python confirmation flow above and pass its
 proposal ID to `guarded_call`, or build the server yourself with
