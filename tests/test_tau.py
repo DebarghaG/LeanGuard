@@ -22,6 +22,39 @@ def test_compiled_actions_cover_actual_tool_set(adapter, tmp_path):
     ) as host:
         declared = {a for rule in host.engine.manifest["rules"] for a in rule["actions"]}
         assert set(adapter.tool_schemas()) == declared
+        from jsonschema import Draft202012Validator
+
+        contracts = adapter.tool_contracts()
+        assert set(contracts) == declared
+        for action, contract in contracts.items():
+            Draft202012Validator.check_schema(contract["result_schema"])
+            assert contract["parameters"] == adapter.tool_schemas()[action]["parameters"]
+            assert contract["execution"].endswith("." + action)
+            assert contract["mutates_backend"] == adapter.mutating(action)
+
+
+def test_telecom_contracts_describe_serialized_values():
+    from jsonschema import Draft202012Validator, FormatChecker
+
+    adapter = TauAdapter("telecom")
+    contracts = adapter.tool_contracts()
+    customer = next(c for c in adapter.environment.tools.db.customers if c.line_ids)
+    fetched = adapter.execute("get_customer_by_id", {"customer_id": customer.customer_id})
+    Draft202012Validator(
+        contracts["get_customer_by_id"]["result_schema"], format_checker=FormatChecker()
+    ).validate(fetched)
+    assert (
+        contracts["get_customer_by_id"]["result_schema"]["properties"]["created_at"].get("format")
+        is None
+    )
+    common = {"customer_id": customer.customer_id, "line_id": customer.line_ids[0]}
+    for action in ("enable_roaming", "get_data_usage"):
+        result = adapter.execute(action, common)
+        Draft202012Validator(contracts[action]["result_schema"]).validate(result)
+        if action == "enable_roaming":
+            assert isinstance(result, str)
+        else:
+            assert isinstance(result["data_used_gb"], str)
 
 
 def test_native_schemas_match_pinned_tool_definitions():
