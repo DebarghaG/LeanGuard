@@ -36,6 +36,7 @@ def test_inspection_preserves_manifest_and_parameters():
             "scope": "principal",
         }
         tree["rules"].clear()
+        tree["properties"]["pack"].append("local_edit")
         assert engine.manifest == before
 
 

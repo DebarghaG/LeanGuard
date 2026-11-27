@@ -15,7 +15,7 @@ def inspect_policy(engine: Engine) -> dict:
         **tree,
         "engine_sha256": engine.fingerprint,
         "properties": {
-            "pack": engine.manifest.get("properties", []),
+            "pack": deepcopy(engine.manifest.get("properties", [])),
             "engine": ["decision_sound", "decision_no_errors"],
             "note": "Declaration names identify compiled claims; source prose is not a proved specification.",
         },
