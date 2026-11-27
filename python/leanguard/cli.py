@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -26,6 +27,10 @@ def main():
     serve.add_argument("--journal", type=Path, required=True)
     serve.add_argument("--principal", required=True)
     serve.add_argument("--session", required=True)
+    serve.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--allowed-host", action="append", default=None)
     args = parser.parse_args()
     if args.command == "manifest":
         with Engine(args.domain, binary=args.binary) as engine:
@@ -80,7 +85,19 @@ def main():
             session=args.session,
             clock=clock,
         ) as host:
-            build_server(host).run(transport="stdio")
+            if args.transport == "stdio":
+                build_server(host).run(transport="stdio")
+            else:
+                import uvicorn
+
+                from .mcp_http import build_http_app
+
+                app = build_http_app(
+                    host,
+                    token=os.environ.get("LEANGUARD_MCP_TOKEN", ""),
+                    allowed_hosts=args.allowed_host,
+                )
+                uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
