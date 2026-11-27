@@ -14,6 +14,8 @@ structure Context where
 structure Check where
   name : String
   run : Context → Except String Bool
+  /-- Declared display metadata. It is never consulted by the evaluator. -/
+  inspection : Option Json := none
 
 abbrev Policy := Rule Check
 
@@ -51,7 +53,7 @@ def any (xs : Array Json) (p : Json → Except String Bool) : Except String Bool
 end Data
 
 def check (name : String) (run : Context → Except String Bool) : Formula Check :=
-  .atom ⟨name, run⟩
+  .atom { name, run }
 
 def require (id : String) (actions : List String) (condition : Formula Check)
     (source : String) : Policy := ⟨id, .require, actions, condition, source⟩
@@ -72,15 +74,25 @@ def sameAuthority (a b : Event) : Bool := a.actor == b.actor && a.workflow == b.
 def eventCheck (name : String) (p : Event → Event → Bool) : Formula Check :=
   check name fun c ↦ .ok (c.history.head?.any (p c.request))
 
-def confirmedEvent : Formula Check := eventCheck "matching_confirmation" fun r e ↦
-  sameConversation r e && sameAuthority r e && e.kind == "confirmed" && e.action == r.action &&
-    e.resource == r.resource && e.binding == r.binding && r.binding != ""
+def confirmedEvent : Formula Check := .atom {
+  name := "matching_confirmation"
+  inspection := some (Json.mkObj [("kind", toJson "matching_confirmation")])
+  run := fun c ↦ .ok (c.history.head?.any fun e ↦
+    let r := c.request
+    sameConversation r e && sameAuthority r e && e.kind == "confirmed" && e.action == r.action &&
+      e.resource == r.resource && e.binding == r.binding && r.binding != "") }
 
-def revokedEvent : Formula Check := eventCheck "matching_revocation" fun r e ↦
-  sameConversation r e && e.kind == "revoked" && e.binding == r.binding
+def revokedEvent : Formula Check := .atom {
+  name := "matching_revocation"
+  inspection := some (Json.mkObj [("kind", toJson "matching_revocation")])
+  run := fun c ↦ .ok (c.history.head?.any fun e ↦
+    sameConversation c.request e && e.kind == "revoked" && e.binding == c.request.binding) }
 
-def usedConfirmation : Formula Check := eventCheck "confirmation_consumed" fun r e ↦
-  sameConversation r e && e.kind == "dispatch" && e.binding == r.binding
+def usedConfirmation : Formula Check := .atom {
+  name := "confirmation_consumed"
+  inspection := some (Json.mkObj [("kind", toJson "confirmation_consumed")])
+  run := fun c ↦ .ok (c.history.head?.any fun e ↦
+    sameConversation c.request e && e.kind == "dispatch" && e.binding == c.request.binding) }
 
 /-- A matching confirmation happened earlier, hasn't been revoked, and hasn't been used by a dispatch. -/
 def confirmed : Formula Check :=
@@ -93,13 +105,21 @@ def confirmedWithin (seconds : Nat) : Formula Check :=
 
 def observed (actions : List String) : Formula Check :=
   .within .conversation (.previous none (.once none
-    (eventCheck "successful_resource_observation" fun r e ↦
-    sameResource r e && sameConversation r e && r.workflow == e.workflow && e.kind == "success" &&
-      actions.contains e.action)))
+    (.atom {
+      name := "successful_resource_observation"
+      inspection := some (Json.mkObj [("kind", toJson "successful_resource_observation"),
+        ("actions", toJson actions)])
+      run := fun c ↦ .ok (c.history.head?.any fun e ↦
+        let r := c.request
+        sameResource r e && sameConversation r e && r.workflow == e.workflow && e.kind == "success" &&
+          actions.contains e.action) })))
 
 def neverDispatched (actions : List String) : Formula Check :=
-  .neg (.once none (eventCheck "resource_dispatch" fun r e ↦
-    sameResource r e && e.kind == "dispatch" && actions.contains e.action))
+  .neg (.once none (.atom {
+    name := "resource_dispatch"
+    inspection := some (Json.mkObj [("kind", toJson "resource_dispatch"), ("actions", toJson actions)])
+    run := fun c ↦ .ok (c.history.head?.any fun e ↦
+      sameResource c.request e && e.kind == "dispatch" && actions.contains e.action) }))
 
 def countEvents (h : History) (p : Event → Bool) : Nat := (h.filter p).length
 def sumEvents (h : History) (p : Event → Bool) : Nat :=
@@ -109,16 +129,22 @@ def quotaMatches (request : Event) (window : Nat) (e : Event) : Bool :=
   samePrincipal request e && e.kind == "dispatch" &&
     e.time ≤ request.time && request.time - e.time ≤ window
 
-def quota (calls amount window : Nat) : Formula Check := check "dispatch_quota" fun c ↦
-  let matching := quotaMatches c.request window
-  .ok (countEvents c.history matching < calls &&
-    sumEvents c.history matching + c.request.amount ≤ amount)
+def quota (calls amount window : Nat) : Formula Check := .atom {
+  name := "dispatch_quota"
+  inspection := some (Json.mkObj [("kind", toJson "dispatch_quota"), ("calls", toJson calls),
+    ("amount", toJson amount), ("window_seconds", toJson window), ("scope", toJson "principal")])
+  run := fun c ↦
+    let matching := quotaMatches c.request window
+    .ok (countEvents c.history matching < calls &&
+      sumEvents c.history matching + c.request.amount ≤ amount) }
 
-def singleFlight : Formula Check := check "single_inflight_call" fun c ↦
-  .ok (!(c.history.any fun e ↦
+def singleFlight : Formula Check := .atom {
+  name := "single_inflight_call"
+  inspection := some (Json.mkObj [("kind", toJson "single_inflight_call")])
+  run := fun c ↦ .ok (!(c.history.any fun e ↦
     (sameConversation c.request e || sameResource c.request e) && e.kind == "dispatch" &&
     !(c.history.any fun outcome ↦ outcome.id == e.id &&
-      (["success", "failure", "reconciled"].contains outcome.kind))))
+      (["success", "failure", "reconciled"].contains outcome.kind)))) }
 
 structure Decision where
   allow : Bool
