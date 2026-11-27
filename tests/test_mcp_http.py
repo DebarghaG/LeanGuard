@@ -3,7 +3,7 @@ import json
 import pytest
 
 pytest.importorskip("mcp")
-import httpx
+import httpx2
 from leanguard import GuardHost
 from leanguard.demo import MemoryTools
 from leanguard.mcp_http import build_http_app
@@ -33,8 +33,8 @@ async def test_http_requires_auth_and_dispatches_only_through_host(host):
     }
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app), base_url="http://localhost:8000"
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app), base_url="http://localhost:8000"
         ) as client,
     ):
         assert (await client.post("/mcp", json=payload, headers=headers)).status_code == 401
