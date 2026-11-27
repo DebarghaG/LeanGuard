@@ -16,6 +16,22 @@ classifiers = ["Operating System :: POSIX :: Linux", "Programming Language :: Py
 Repository = "https://github.com/DebarghaG/LeanGuard"
 
 [project.optional-dependencies]
+agent-claude = ["claude-agent-sdk==0.2.182"]
+# Exact SDK versions validated by the isolated integration matrix.
+agent-strands = ["strands-agents==1.65.0"]
+agent-langchain = ["langchain==1.5.0", "langchain-core==1.8.1", "langgraph==1.2.22"]
+agent-deepagents = ["deepagents==0.7.38", "langchain==1.5.0", "langchain-core==1.8.1", "langgraph==1.2.22"]
+agent-openai = ["openai-agents==0.24.0"]
+agent-adk = ["google-adk==2.14.1"]
+agent-microsoft = ["agent-framework-core==1.26.0"]
+agent-crewai = ["crewai==1.15.41"]
+agent-llamaindex = ["llama-index-core==0.14.26"]
+agent-pydantic = ["pydantic-ai-slim==2.68.0"]
+agent-agno = ["agno==3.2.0"]
+agent-haystack = ["haystack-ai==3.5.0"]
+agent-smolagents = ["smolagents==1.26.0"]
+agent-dspy = ["dspy==3.5.0"]
+agent-camel = ["camel-ai==0.2.90", "mcp==1.30.0"]
 test = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.12"]
 release = ["build>=1.2", "twine>=6", "auditwheel>=6; sys_platform == 'linux'", "patchelf>=0.17; sys_platform == 'linux'"]
 mcp = ["mcp==2.2.0"]

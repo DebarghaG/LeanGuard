@@ -1,0 +1,50 @@
+name: Framework integrations
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      frameworks: ${{ steps.matrix.outputs.frameworks }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: matrix
+        run: echo "frameworks=$(python scripts/test_integration.py --list)" >> "$GITHUB_OUTPUT"
+      - name: Install pinned Lean toolchain
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - run: lake update
+      - run: lake exe cache get
+      - run: lake build leanguard
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integration-engine
+          path: .lake/build/bin/leanguard
+          retention-days: 2
+  sdk:
+    needs: native
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: ${{ fromJSON(needs.native.outputs.frameworks) }}
+    env:
+      LEANGUARD_BINARY: ${{ github.workspace }}/.native/leanguard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: integration-engine
+          path: .native
+      - run: chmod +x .native/leanguard
+      - run: python scripts/test_integration.py '${{ matrix.framework }}' --install

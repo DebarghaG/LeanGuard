@@ -5,6 +5,7 @@ import pytest
 pytest.importorskip("mcp")
 from leanguard import GuardHost
 from leanguard.demo import MemoryTools
+from leanguard.host import ReadOnlyToolError
 from leanguard.mcp_server import build_server
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
@@ -60,3 +61,18 @@ async def test_mcp_stdio_transport(tmp_path):
         assert not result.structured_content["allow"]
         result = await client.call_tool("guarded_call", {"action": "read", "arguments": {}})
         assert result.structured_content["result"]["value"] == "initial"
+
+
+async def test_mcp_uses_the_same_private_diagnostic_boundary(tmp_path):
+    adapter = MemoryTools()
+
+    def fail(*args):
+        raise ReadOnlyToolError("private backend credential")
+
+    adapter.execute = fail
+    with GuardHost("example", tmp_path / "journal", adapter, principal="p", session="s") as host:
+        async with Client(build_server(host)) as client:
+            result = await client.call_tool("guarded_call", {"action": "read", "arguments": {}})
+            assert result.structured_content["outcome"] == "failure"
+            assert "private" not in str(result.structured_content)
+            assert "error" not in result.structured_content
