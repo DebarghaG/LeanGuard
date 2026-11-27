@@ -138,6 +138,9 @@ lists what your adapter is trusted to get right.
 
 ## MCP
 
+The [framework integration roadmap](docs/integrations.md) records integration
+points, execution guarantees, and the tests required for supported SDK versions.
+
 ```sh
 .venv/bin/pip install -e '.[mcp]'
 .venv/bin/leanguard mcp --domain example --journal ./private/session.sqlite \
